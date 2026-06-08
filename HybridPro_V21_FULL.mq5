@@ -626,9 +626,16 @@ void UpdateBestSide() {
 //|                 SELL pool (ไม้ SELL กำไรสูงสุด N ไม้ข้ามทุก magic)|
 //| ปิดทั้ง pool เมื่อกำไรรวมถึงเป้า — ไม่ปิดแยกรายไม้              |
 //+------------------------------------------------------------------+
-void FireBestSidePool(ulong &poolTk[], ENUM_POSITION_TYPE dir, double target, string tag) {
+void FireBestSidePool(ulong &poolTk[], ENUM_POSITION_TYPE dir, double target, int requiredN, string tag) {
    int n = ArraySize(poolTk);
    if(n == 0 || target <= 0.0) return;
+
+   // pool ต้องครบ requiredN ไม้ก่อนจึงจะ TP ได้
+   if(n < requiredN) {
+      // log ครั้งแรกเท่านั้นเพื่อไม่ spam
+      // PrintFormat("[%s] pool %d/%d — รอให้ครบก่อน", tag, n, requiredN);
+      return;
+   }
 
    double winSum = 0;
    int alive = 0;
@@ -677,8 +684,8 @@ void FireBestSidePool(ulong &poolTk[], ENUM_POSITION_TYPE dir, double target, st
 }
 
 void ChkBestSideTP() {
-   FireBestSidePool(gBestBuyTk,  POSITION_TYPE_BUY,  TPBestBuy,  "BestBuyTP");
-   FireBestSidePool(gBestSellTk, POSITION_TYPE_SELL, TPBestSell, "BestSellTP");
+   FireBestSidePool(gBestBuyTk,  POSITION_TYPE_BUY,  TPBestBuy,  BestBuyN,  "BestBuyTP");
+   FireBestSidePool(gBestSellTk, POSITION_TYPE_SELL, TPBestSell, BestSellN, "BestSellTP");
 }
 
 //+------------------------------------------------------------------+
