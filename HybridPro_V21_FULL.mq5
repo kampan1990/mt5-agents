@@ -143,7 +143,13 @@ input int    AbsorbN      = 2;
 // ตัวอย่าง: AbsorbMinNet=0.0 → net ต้องไม่ติดลบ (แนะนำ)
 //           AbsorbMinNet=1.0 → ต้องมีกำไรสุทธิอย่างน้อย $1 หลังหักไม้เสีย
 // *** เงื่อนไขการ fire: winners >= target และ net >= AbsorbMinNet ***
-input double AbsorbMinNet = 0.0;
+input double AbsorbMinNet  = 0.0;
+// AbsorbRatio: อัตราส่วนขั้นต่ำ winners/|losers| ก่อนดึงไม้เสียออก
+// ตัวอย่าง: AbsorbRatio=3.0 → ต้องมีกำไร $3 ต่อขาดทุน $1 ที่ดึงออก
+//           AbsorbRatio=1.0 → กำไรต้องคุ้มทุนเท่านั้น (หลวมสุด)
+//           AbsorbRatio=0.0 → ปิด ratio check (พฤติกรรมเดิม)
+// ป้องกัน: กราฟผิดทาง + ขาดทุนหนัก → winners น้อย → ratio ไม่ผ่าน → ไม่ fire
+input double AbsorbRatio   = 3.0;
 
 input group "=== Best Side Pool ==="
 // ปิดทั้ง pool เมื่อกำไรรวมถึงเป้า — ไม่ปิดแยกรายไม้ ไม่แยก magic
@@ -582,6 +588,10 @@ bool TryTP(int &mgs[], double target, string tag) {
    // แยก 2 เงื่อนไขออกจากกัน ทำให้ AbsorbN ทำงานได้เสมอเมื่อ winners ถึงเป้า
    if(winSum  < target)       return false;  // winners ยังไม่ถึงเป้า
    if(groupNet < AbsorbMinNet) return false;  // net หลังหักเสียต่ำเกินกำหนด
+   // ratio check: winners ต้องเป็น AbsorbRatio เท่าของขาดทุนที่ดึงออก
+   // ป้องกันกราฟผิดทาง (ขาดทุนหนัก) → ratio ต่ำ → ไม่ fire
+   double absLoss = winSum - groupNet;  // |loserSum| = winSum - groupNet
+   if(AbsorbRatio > 0.0 && absLoss > 0.0 && winSum < absLoss * AbsorbRatio) return false;
 
    FireTPGroup(groupTk);
    gNormalTPFired = true;
@@ -683,6 +693,12 @@ void FireBestSidePool(ulong &poolTk[], ENUM_POSITION_TYPE dir, double target, in
    double groupNet = winSum + loserSum;
    if(groupNet < AbsorbMinNet) {
       PrintFormat("[%s] skip net=%.2f < AbsorbMinNet=%.2f", tag, groupNet, AbsorbMinNet);
+      return;
+   }
+   double absLoss = winSum - groupNet;
+   if(AbsorbRatio > 0.0 && absLoss > 0.0 && winSum < absLoss * AbsorbRatio) {
+      PrintFormat("[%s] skip ratio=%.2f < AbsorbRatio=%.2f (win=%.2f loss=%.2f)",
+                  tag, winSum/absLoss, AbsorbRatio, winSum, absLoss);
       return;
    }
 
