@@ -18,6 +18,7 @@
 #include "M2Controller.mqh"
 #include "BestKeeper.mqh"
 #include "TPManager.mqh"
+#include "Dashboard.mqh"
 #include <Trade/Trade.mqh>
 
 //+------------------------------------------------------------------+
@@ -90,20 +91,124 @@ input int    SlippagePoints   = 30;       // Maximum allowed slippage in points
 input bool   LogToFile        = true;     // Write log output to a file
 input string LogFileName      = "TMG_Log";// Base log filename (date appended automatically)
 
+// --- Dashboard ---
+input bool   ShowDashboard    = true;     // Show on-chart dashboard
+input int    DashPanelX       = 10;       // Dashboard left panel X position (pixels)
+input int    DashPanelY       = 30;       // Dashboard top Y position (pixels)
+input double TOTMaxProfit     = 50.0;     // TOT bar target profit
+input double PairM1M2Max      = 60.0;     // PAIR M1+M2 bar target profit
+
 //+------------------------------------------------------------------+
 //|  MODULE INSTANCES                                                 |
 //+------------------------------------------------------------------+
-CLogger*          g_logger   = NULL;
-CPositionTracker* g_tracker  = NULL;
-CRiskManager*     g_risk     = NULL;
-CGridEngine*      g_grid     = NULL;
-CM2Controller*    g_m2       = NULL;
-CBestKeeper*      g_keeper   = NULL;
-CTPManager*       g_tp       = NULL;
-CTrade*           g_trade    = NULL;
+CLogger*          g_logger    = NULL;
+CPositionTracker* g_tracker   = NULL;
+CRiskManager*     g_risk      = NULL;
+CGridEngine*      g_grid      = NULL;
+CM2Controller*    g_m2        = NULL;
+CBestKeeper*      g_keeper    = NULL;
+CTPManager*       g_tp        = NULL;
+CTrade*           g_trade     = NULL;
+CDashboard*       g_dashboard = NULL;
 
 //--- Day-change detection for daily loss reset
 datetime g_lastDayDate = 0;
+
+//--- Dashboard tracking variables
+double g_sessionMaxDD   = 0.0;      // worst drawdown % this session
+double g_lotPerDay      = 0.0;      // total lots opened today
+double g_closedPNL[3]   = {0,0,0};  // closed PNL today per magic (index = ENUM_MAGIC_ID)
+double g_monthlyPNL[31];            // daily closed PNL for current month (index = day-1)
+double g_monthlyLots[31];           // daily lots for current month
+
+//+------------------------------------------------------------------+
+//| CountLosingPositions — count open positions with profit < 0     |
+//+------------------------------------------------------------------+
+int CountLosingPositions(ENUM_MAGIC_ID id)
+{
+   PositionRecord recs[];
+   int n = g_tracker.GetRecordsByMagic(id, recs);
+   int cnt = 0;
+   for(int i = 0; i < n; i++)
+      if(recs[i].profit < 0.0) cnt++;
+   return cnt;
+}
+
+//+------------------------------------------------------------------+
+//| BuildDashboardData — assemble snapshot struct for CDashboard     |
+//+------------------------------------------------------------------+
+DashboardData BuildDashboardData()
+{
+   DashboardData d;
+   ZeroMemory(d);
+
+   // Account
+   d.balance        = AccountInfoDouble(ACCOUNT_BALANCE);
+   d.equity         = AccountInfoDouble(ACCOUNT_EQUITY);
+   d.pnl            = d.equity - d.balance;
+   d.lotPerDay      = g_lotPerDay;
+   d.drawdownPct    = g_risk.GetCurrentDrawdownPct();
+   d.maxDrawdownPct = g_sessionMaxDD;
+
+   // M1
+   MagicState stM1  = g_tracker.GetMagicState(MAGIC_M1);
+   d.m1Locked       = stM1.isLocked;
+   d.m1Stars        = 0;
+   d.m1MaxStars     = 10;
+   d.m1Trades       = stM1.totalPositions;
+   d.m1MaxTrades    = 50;
+   d.m1PNL          = stM1.totalProfit;
+   d.m1OpenLot      = stM1.totalLots;
+   d.m1COP          = g_closedPNL[(int)MAGIC_M1];
+   d.m1LosePos      = CountLosingPositions(MAGIC_M1);
+
+   // M3
+   MagicState stM3  = g_tracker.GetMagicState(MAGIC_M3);
+   d.m3Locked       = stM3.isLocked;
+   d.m3Stars        = 0;
+   d.m3MaxStars     = 10;
+   d.m3Trades       = stM3.totalPositions;
+   d.m3MaxTrades    = 50;
+   d.m3PNL          = stM3.totalProfit;
+   d.m3OpenLot      = stM3.totalLots;
+   d.m3COP          = g_closedPNL[(int)MAGIC_M3];
+   d.m3LosePos      = CountLosingPositions(MAGIC_M3);
+
+   // M2
+   MagicState stM2    = g_tracker.GetMagicState(MAGIC_M2);
+   M2StateInfo m2info = g_m2.GetState();
+   d.m2AssistMode     = (m2info.state != M2_STATE_NORMAL);
+   d.m2AssistTarget   = (m2info.state == M2_STATE_LOCKED_BUY) ? 1 : 3;
+   int m2Dir          = g_m2.GetM2Direction();
+   d.m2Direction      = (m2Dir == (int)POSITION_TYPE_BUY)
+                        ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+   d.m2Trades         = stM2.totalPositions;
+   d.m2MaxTrades      = 50;
+   d.m2PNL            = stM2.totalProfit;
+   d.m2COP            = g_closedPNL[(int)MAGIC_M2];
+   d.m2TriggerPrice   = 0.0;  // optional: set when lock transitions
+
+   // TOT + PAIR
+   d.totCurrent       = stM1.totalProfit + stM2.totalProfit + stM3.totalProfit;
+   d.totMax           = TOTMaxProfit;
+   d.pairM1M2Current  = stM1.totalProfit + stM2.totalProfit;
+   d.pairM1M2Max      = PairM1M2Max;
+
+   // ADX footer
+   d.adxTrending      = d.m2AssistMode || (m2Dir != -1);
+   d.adxDirectionUp   = (m2Dir == (int)POSITION_TYPE_BUY);
+   d.spread           = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+
+   // Calendar
+   ArrayCopy(d.monthlyPNL,  g_monthlyPNL,  0, 0, 31);
+   ArrayCopy(d.monthlyLots, g_monthlyLots, 0, 0, 31);
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   d.calYear  = dt.year;
+   d.calMonth = dt.mon;
+
+   return d;
+}
 
 //+------------------------------------------------------------------+
 //| OpenOrder — send a market order through CTrade with full logging |
@@ -158,6 +263,9 @@ bool OpenOrder(int magic, ENUM_ORDER_TYPE type, double lots)
    ulong ticket = g_trade.ResultOrder();
    double execPrice = g_trade.ResultPrice();
 
+   // Track lots opened today
+   g_lotPerDay += lots;
+
    if(g_logger != NULL)
       g_logger.LogTrade("OPEN", ticket, execPrice, lots, 0.0,
                         StringFormat("magic=%d type=%s sl=%.5f",
@@ -177,8 +285,26 @@ void CheckDayChange()
 
    if(today != g_lastDayDate)
    {
+      // Archive yesterday's PNL into monthly calendar
+      MqlDateTime prev;
+      TimeToStruct(g_lastDayDate, prev);
+      if(prev.day >= 1 && prev.day <= 31)
+      {
+         g_monthlyPNL[prev.day - 1]  += g_closedPNL[0] + g_closedPNL[1] + g_closedPNL[2];
+         g_monthlyLots[prev.day - 1] += g_lotPerDay;
+      }
+
       g_lastDayDate = today;
+      g_lotPerDay   = 0.0;
+      g_closedPNL[0] = g_closedPNL[1] = g_closedPNL[2] = 0.0;
       g_risk.OnNewDay();
+
+      // Reset monthly arrays at the start of a new month
+      if(dt.day == 1)
+      {
+         ArrayInitialize(g_monthlyPNL,  0.0);
+         ArrayInitialize(g_monthlyLots, 0.0);
+      }
    }
 }
 
@@ -253,6 +379,22 @@ int OnInit()
    TimeToStruct(TimeCurrent(), dt);
    dt.hour = 0; dt.min = 0; dt.sec = 0;
    g_lastDayDate = StructToTime(dt);
+
+   // ----- Monthly arrays -----
+   ArrayInitialize(g_monthlyPNL,  0.0);
+   ArrayInitialize(g_monthlyLots, 0.0);
+
+   // ----- Dashboard -----
+   if(ShowDashboard)
+   {
+      g_dashboard = new CDashboard();
+      if(g_dashboard != NULL)
+      {
+         g_dashboard.Init(_Symbol, "HYBRID PRO", "V1.00",
+                          DashPanelX, DashPanelY, "TMG_");
+         g_dashboard.Create();
+      }
+   }
 
    g_logger.LogInfo(StringFormat(
       "TriMagicGrid v1.0.0 initialised on %s — M1=%d M2=%d M3=%d",
@@ -341,6 +483,18 @@ void OnTick()
          OpenOrder(MagicM2, otype, nextLot);
       }
    }
+
+   // ----------------------------------------------------------------
+   // 11. Update session max drawdown and refresh dashboard
+   // ----------------------------------------------------------------
+   double currDD = g_risk.GetCurrentDrawdownPct();
+   if(currDD < g_sessionMaxDD) g_sessionMaxDD = currDD;
+
+   if(g_dashboard != NULL)
+   {
+      DashboardData dd = BuildDashboardData();
+      g_dashboard.Update(dd);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -363,11 +517,22 @@ void OnDeinit(const int reason)
    }
 
    // Delete remaining modules in reverse dependency order
-   if(g_tp      != NULL) { delete g_tp;      g_tp      = NULL; }
-   if(g_keeper  != NULL) { delete g_keeper;  g_keeper  = NULL; }
-   if(g_grid    != NULL) { delete g_grid;    g_grid    = NULL; }
-   if(g_risk    != NULL) { delete g_risk;    g_risk    = NULL; }
-   if(g_tracker != NULL) { delete g_tracker; g_tracker = NULL; }
-   if(g_trade   != NULL) { delete g_trade;   g_trade   = NULL; }
-   if(g_logger  != NULL) { delete g_logger;  g_logger  = NULL; }
+   if(g_dashboard != NULL) { g_dashboard.Destroy(); delete g_dashboard; g_dashboard = NULL; }
+   if(g_tp        != NULL) { delete g_tp;        g_tp        = NULL; }
+   if(g_keeper    != NULL) { delete g_keeper;    g_keeper    = NULL; }
+   if(g_grid      != NULL) { delete g_grid;      g_grid      = NULL; }
+   if(g_risk      != NULL) { delete g_risk;      g_risk      = NULL; }
+   if(g_tracker   != NULL) { delete g_tracker;   g_tracker   = NULL; }
+   if(g_trade     != NULL) { delete g_trade;     g_trade     = NULL; }
+   if(g_logger    != NULL) { delete g_logger;    g_logger    = NULL; }
+}
+
+//+------------------------------------------------------------------+
+//| OnChartEvent — handle chart resize to keep dashboard anchored    |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long& lparam,
+                  const double& dparam, const string& sparam)
+{
+   if(id == CHARTEVENT_CHART_CHANGE && g_dashboard != NULL)
+      g_dashboard.OnResize();
 }
