@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>HybridPro EA — Agent Workflow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0c14;
+    font-family: 'Courier New', monospace;
+    color: #c8d8f0;
+    min-height: 100vh;
+    overflow-x: auto;
+  }
+
+  /* ── Top bar ── */
+  #topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px;
+    background: #0d1020;
+    border-bottom: 1px solid #1e2a50;
+    position: sticky; top: 0; z-index: 100;
+  }
+  #topbar h1 { font-size: 13px; color: #ffc832; letter-spacing: 2px; }
+  #topbar span { font-size: 10px; color: #5a6a8a; }
+  .tbtn {
+    margin-left: auto; padding: 5px 12px;
+    background: #1a2240; border: 1px solid #2a3860;
+    color: #8ab0e8; font-size: 11px; cursor: pointer;
+    border-radius: 4px; font-family: inherit;
+    transition: all .2s;
+  }
+  .tbtn:hover { background: #253060; color: #fff; }
+  .tbtn.danger { border-color: #5a2020; color: #e06060; }
+  .tbtn.danger:hover { background: #3a1818; }
+
+  /* ── Canvas ── */
+  #canvas {
+    position: relative;
+    width: 1400px;
+    min-height: 900px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+
+  /* ── SVG connector layer ── */
+  #svg-layer {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Node base ── */
+  .node {
+    position: absolute;
+    width: 148px;
+    background: #0e1428;
+    border-radius: 10px;
+    border: 1.5px solid #1e2a50;
+    cursor: grab;
+    user-select: none;
+    z-index: 10;
+    transition: box-shadow .2s, border-color .2s;
+  }
+  .node:hover { border-color: #3a5090; box-shadow: 0 0 14px rgba(60,100,220,.35); }
+  .node.selected { border-color: #4a80e8 !important; box-shadow: 0 0 18px rgba(74,128,232,.5) !important; }
+  .node.dragging { cursor: grabbing; z-index: 50; box-shadow: 0 8px 32px rgba(0,0,0,.6); }
+
+  /* Node header */
+  .node-hdr {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 8px 5px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    border-radius: 8px 8px 0 0;
+  }
+  .node-icon { font-size: 15px; flex-shrink: 0; }
+  .node-name {
+    font-size: 11px; font-weight: bold; letter-spacing: 1px;
+    flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .node-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    background: #2a3860;
+  }
+  .node-dot.active { background: #40d060; box-shadow: 0 0 6px #40d060; }
+  .node-dot.warn   { background: #e0b040; box-shadow: 0 0 6px #e0b040; }
+  .node-dot.stop   { background: #e04040; box-shadow: 0 0 6px #e04040; }
+
+  /* Node body */
+  .node-body { padding: 5px 8px 7px; }
+  .node-role {
+    font-size: 9px; color: #5a7aaa;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .node-model {
+    display: inline-block; margin-top: 3px;
+    font-size: 8px; padding: 1px 5px;
+    border-radius: 3px; letter-spacing: .5px;
+    background: rgba(255,255,255,.06); color: #7090c0;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .model-opus   { color: #c080ff; border-color: #6040a0; background: rgba(96,32,160,.2); }
+  .model-sonnet { color: #6090e8; border-color: #304880; background: rgba(32,64,160,.2); }
+  .model-haiku  { color: #40c0a8; border-color: #207060; background: rgba(16,96,80,.2); }
+
+  /* ── Color themes per role ── */
+  .node.ceo   { border-color: #a06010; }
+  .node.ceo   .node-hdr { background: linear-gradient(135deg,#2a1800,#1a1008); }
+  .node.ceo   .node-name { color: #ffc832; }
+
+  .node.sec   { border-color: #304890; }
+  .node.sec   .node-hdr { background: linear-gradient(135deg,#0c1838,#080e28); }
+  .node.sec   .node-name { color: #6890e8; }
+
+  .node.trade { border-color: #803020; }
+  .node.trade .node-hdr { background: linear-gradient(135deg,#200c08,#180808); }
+  .node.trade .node-name { color: #ff6840; }
+
+  .node.data  { border-color: #206040; }
+  .node.data  .node-hdr { background: linear-gradient(135deg,#081a10,#040e08); }
+  .node.data  .node-name { color: #40c880; }
+
+  .node.ops   { border-color: #204060; }
+  .node.ops   .node-hdr { background: linear-gradient(135deg,#08101a,#04080e); }
+  .node.ops   .node-name { color: #4090c8; }
+
+  .node.fin   { border-color: #806020; }
+  .node.fin   .node-hdr { background: linear-gradient(135deg,#201808,#100c04); }
+  .node.fin   .node-name { color: #e0a840; }
+
+  .node.legal { border-color: #406060; }
+  .node.legal .node-hdr { background: linear-gradient(135deg,#081818,#040c0c); }
+  .node.legal .node-name { color: #40b8b8; }
+
+  .node.tech  { border-color: #203060; }
+  .node.tech  .node-hdr { background: linear-gradient(135deg,#080e18,#040810); }
+  .node.tech  .node-name { color: #5080d8; }
+
+  .node.media { border-color: #502060; }
+  .node.media .node-hdr { background: linear-gradient(135deg,#140818,#0c040e); }
+  .node.media .node-name { color: #c060e0; }
+
+  /* ── Group label ── */
+  .group-label {
+    position: absolute;
+    font-size: 9px; letter-spacing: 2px; color: #3a5080;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* ── Edge labels ── */
+  .edge-label {
+    position: absolute;
+    font-size: 8px; color: #3a5080;
+    background: #0a0c14;
+    padding: 1px 4px;
+    pointer-events: none;
+    z-index: 5;
+    white-space: nowrap;
+  }
+
+  /* ── Panel ── */
+  #panel {
+    position: fixed; right: 0; top: 44px;
+    width: 240px; height: calc(100vh - 44px);
+    background: #0d1020;
+    border-left: 1px solid #1a2440;
+    padding: 16px;
+    overflow-y: auto;
+    z-index: 200;
+    transform: translateX(100%);
+    transition: transform .3s;
+  }
+  #panel.open { transform: translateX(0); }
+  #panel h3 { font-size: 11px; color: #6080b0; letter-spacing: 1px; margin-bottom: 12px; }
+  .pfield { margin-bottom: 10px; }
+  .pfield label { display: block; font-size: 9px; color: #5a7090; margin-bottom: 3px; letter-spacing: .5px; }
+  .pfield input, .pfield select, .pfield textarea {
+    width: 100%; padding: 5px 7px;
+    background: #080e1a; border: 1px solid #1e2a40;
+    color: #c0d0e8; font-family: inherit; font-size: 10px;
+    border-radius: 4px; outline: none;
+    transition: border-color .2s;
+  }
+  .pfield input:focus, .pfield select:focus, .pfield textarea:focus {
+    border-color: #3060a0;
+  }
+  .pfield textarea { resize: vertical; min-height: 60px; }
+  .prow { display: flex; gap: 6px; }
+  .prow .pfield { flex: 1; }
+  #del-node-btn {
+    width: 100%; padding: 7px;
+    background: #200808; border: 1px solid #5a1010;
+    color: #e05050; font-family: inherit; font-size: 10px;
+    cursor: pointer; border-radius: 4px; margin-top: 8px;
+  }
+  #del-node-btn:hover { background: #3a1010; }
+
+  /* ── Edge controls ── */
+  .add-edge-zone {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid #1a2440;
+  }
+  .edge-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 9px; color: #5a7090; padding: 3px 0;
+  }
+  .edge-row span { color: #8090b0; }
+  .edge-del {
+    background: none; border: none; color: #804040;
+    cursor: pointer; font-size: 11px; padding: 0 4px;
+  }
+  .edge-del:hover { color: #e06060; }
+
+  /* ── Add node button ── */
+  #add-node-btn {
+    position: fixed; bottom: 24px; right: 24px;
+    width: 42px; height: 42px; border-radius: 50%;
+    background: #1a2a50; border: 1.5px solid #3050a0;
+    color: #6090e8; font-size: 20px;
+    cursor: pointer; z-index: 300;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+    transition: all .2s;
+  }
+  #add-node-btn:hover { background: #253060; transform: scale(1.1); }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 500;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal {
+    background: #0d1020; border: 1px solid #1e2a50;
+    border-radius: 10px; padding: 20px; width: 300px;
+  }
+  .modal h3 { font-size: 12px; color: #6080c8; margin-bottom: 14px; letter-spacing: 1px; }
+  .modal .pfield label { font-size: 9px; }
+  .modal-btns { display: flex; gap: 8px; margin-top: 14px; }
+  .modal-btns button {
+    flex: 1; padding: 7px;
+    border-radius: 4px; font-family: inherit; font-size: 10px;
+    cursor: pointer;
+  }
+  .btn-ok { background: #182840; border: 1px solid #304880; color: #6090e8; }
+  .btn-ok:hover { background: #1e3050; }
+  .btn-cancel { background: #180808; border: 1px solid #401818; color: #c06060; }
+  .btn-cancel:hover { background: #200c0c; }
+
+  /* edge connection mode cursor */
+  body.connecting #canvas { cursor: crosshair; }
+  body.connecting .node { cursor: crosshair; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⚡ HYBRIDPRO EA — AGENT WORKFLOW</h1>
+  <span id="node-count">0 nodes</span>
+  <button class="tbtn" id="btn-connect">🔗 Connect</button>
+  <button class="tbtn" id="btn-export">💾 Export JSON</button>
+  <button class="tbtn" id="btn-import">📂 Import JSON</button>
+  <button class="tbtn danger" id="btn-reset">↺ Reset</button>
+  <input type="file" id="file-input" accept=".json" style="display:none">
+</div>
+
+<div id="canvas">
+  <svg id="svg-layer"></svg>
+</div>
+
+<div id="panel">
+  <h3>NODE PROPERTIES</h3>
+  <div class="pfield">
+    <label>NAME</label>
+    <input type="text" id="p-name" placeholder="HAWK">
+  </div>
+  <div class="pfield">
+    <label>ROLE / DESCRIPTION</label>
+    <input type="text" id="p-role" placeholder="Market Intelligence">
+  </div>
+  <div class="prow">
+    <div class="pfield">
+      <label>ICON</label>
+      <input type="text" id="p-icon" placeholder="🦅" style="text-align:center">
+    </div>
+    <div class="pfield">
+      <label>MODEL</label>
+      <select id="p-model">
+        <option value="opus">OPUS</option>
+        <option value="sonnet">SONNET</option>
+        <option value="haiku">HAIKU</option>
+      </select>
+    </div>
+  </div>
+  <div class="pfield">
+    <label>COLOR THEME</label>
+    <select id="p-theme">
+      <option value="trade">TRADE (Red)</option>
+      <option value="data">DATA (Green)</option>
+      <option value="ops">OPS (Blue)</option>
+      <option value="fin">FINANCE (Gold)</option>
+      <option value="tech">TECH (Indigo)</option>
+      <option value="media">MEDIA (Purple)</option>
+      <option value="legal">LEGAL (Teal)</option>
+      <option value="sec">SECRETARY (Navy)</option>
+      <option value="ceo">CEO (Amber)</option>
+    </select>
+  </div>
+  <div class="pfield">
+    <label>STATUS</label>
+    <select id="p-status">
+      <option value="">Idle</option>
+      <option value="active">Active (Green)</option>
+      <option value="warn">Warning (Yellow)</option>
+      <option value="stop">Stopped (Red)</option>
+    </select>
+  </div>
+  <div class="pfield">
+    <label>NOTES / LOGIC</label>
+    <textarea id="p-notes" placeholder="อธิบาย logic การทำงาน..."></textarea>
+  </div>
+
+  <div class="add-edge-zone">
+    <div class="pfield" style="margin-bottom:6px">
+      <label>CONNECTIONS FROM THIS NODE</label>
+    </div>
+    <div id="edge-list"></div>
+  </div>
+
+  <button id="del-node-btn">🗑 Delete Node</button>
+</div>
+
+<button id="add-node-btn">+</button>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <h3>ADD NEW NODE</h3>
+    <div class="pfield"><label>NAME</label><input id="m-name" placeholder="NODE NAME"></div>
+    <div class="pfield"><label>ROLE</label><input id="m-role" placeholder="Description"></div>
+    <div class="prow">
+      <div class="pfield"><label>ICON</label><input id="m-icon" placeholder="🤖" style="text-align:center"></div>
+      <div class="pfield">
+        <label>MODEL</label>
+        <select id="m-model">
+          <option value="opus">OPUS</option>
+          <option value="sonnet">SONNET</option>
+          <option value="haiku">HAIKU</option>
+        </select>
+      </div>
+    </div>
+    <div class="pfield">
+      <label>THEME</label>
+      <select id="m-theme">
+        <option value="trade">TRADE</option>
+        <option value="data">DATA</option>
+        <option value="ops">OPS</option>
+        <option value="fin">FINANCE</option>
+        <option value="tech">TECH</option>
+        <option value="media">MEDIA</option>
+        <option value="legal">LEGAL</option>
+        <option value="sec">SECRETARY</option>
+        <option value="ceo">CEO</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-ok" id="m-ok">+ Add Node</button>
+      <button class="btn-cancel" id="m-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let nodes = [];
+let edges = [];
+let selectedNode = null;
+let dragging = null;
+let dragOffX = 0, dragOffY = 0;
+let connectMode = false;
+let connectFrom = null;
+let edgeLabel = '';
+
+// ── Default layout ──────────────────────────────────────────
+const DEFAULT_DATA = {
+  nodes: [
+    // CEO / Secretary
+    { id:'ceo',   name:'TAEC',   role:'Founder & CEO',    icon:'👑', model:'opus',   theme:'ceo',   status:'active', x:620, y:40,  notes:'' },
+    { id:'aria',  name:'ARIA',   role:'Grand Secretary',   icon:'🤖', model:'sonnet', theme:'sec',   status:'active', x:620, y:130, notes:'' },
+
+    // TEAM TRADE (center)
+    { id:'hawk',  name:'HAWK',   role:'Market Intel',      icon:'🔭', model:'opus',   theme:'trade', status:'active', x:545, y:250, notes:'' },
+    { id:'blade', name:'BLADE',  role:'Trade Executor',    icon:'⚔️', model:'opus',   theme:'trade', status:'active', x:545, y:340, notes:'' },
+    { id:'sage',  name:'SAGE',   role:'Risk Manager',      icon:'🛡', model:'opus',   theme:'trade', status:'warn',   x:545, y:430, notes:'' },
+    { id:'auto',  name:'AUTO',   role:'Algo Bot',          icon:'🤖', model:'haiku',  theme:'trade', status:'active', x:545, y:520, notes:'' },
+
+    // Data / Analysis
+    { id:'atlas', name:'ATLAS',  role:'Data Analyst',      icon:'📊', model:'opus',   theme:'data',  status:'active', x:750, y:250, notes:'' },
+    { id:'memo',  name:'MEMO',   role:'Memory Keeper',     icon:'🧠', model:'sonnet', theme:'data',  status:'active', x:750, y:340, notes:'' },
+    { id:'cipher',name:'CIPHER', role:'Competitive Intel', icon:'🔒', model:'haiku',  theme:'data',  status:'active', x:750, y:430, notes:'' },
+
+    // Finance / Legal
+    { id:'coin',  name:'COIN',   role:'Finance Lead',      icon:'💰', model:'opus',   theme:'fin',   status:'active', x:920, y:250, notes:'' },
+    { id:'deal',  name:'DEAL',   role:'Sales',             icon:'🤝', model:'opus',   theme:'fin',   status:'active', x:920, y:340, notes:'' },
+    { id:'boost', name:'BOOST',  role:'Ads Manager',       icon:'📢', model:'opus',   theme:'fin',   status:'active', x:920, y:430, notes:'' },
+
+    { id:'lex',   name:'LEX',    role:'Legal Advisor',     icon:'⚖️', model:'sonnet', theme:'legal', status:'active', x:1090,y:250, notes:'' },
+    { id:'nexus', name:'NEXUS',  role:'R&D Lead',          icon:'🔗', model:'opus',   theme:'legal', status:'active', x:1090,y:340, notes:'' },
+    { id:'echo',  name:'ECHO',   role:'Voice Interface',   icon:'🔊', model:'haiku',  theme:'legal', status:'active', x:1090,y:430, notes:'' },
+
+    // Tech / Dev
+    { id:'rex',   name:'REX',    role:'Tech Architect',    icon:'🔬', model:'opus',   theme:'tech',  status:'active', x:60,  y:250, notes:'' },
+    { id:'nova',  name:'NOVA',   role:'Frontend Dev',      icon:'💻', model:'sonnet', theme:'tech',  status:'active', x:60,  y:340, notes:'' },
+    { id:'byte',  name:'BYTE',   role:'Backend Dev',       icon:'⚙️', model:'opus',   theme:'tech',  status:'active', x:60,  y:430, notes:'' },
+    { id:'zeta',  name:'ZETA',   role:'QA Engineer',       icon:'🔧', model:'sonnet', theme:'tech',  status:'active', x:60,  y:520, notes:'' },
+    { id:'forge', name:'FORGE',  role:'DevOps',            icon:'⚙️', model:'sonnet', theme:'tech',  status:'active', x:60,  y:610, notes:'' },
+
+    // Design / Media
+    { id:'luna',  name:'LUNA',   role:'UX/UI Designer',    icon:'🌸', model:'sonnet', theme:'media', status:'active', x:230, y:250, notes:'' },
+    { id:'pixel', name:'PIXEL',  role:'Visual Designer',   icon:'🎨', model:'sonnet', theme:'media', status:'active', x:230, y:340, notes:'' },
+    { id:'reel',  name:'REEL',   role:'Video Producer',    icon:'🎬', model:'haiku',  theme:'media', status:'active', x:230, y:430, notes:'' },
+
+    // Content
+    { id:'scout', name:'SCOUT',  role:'Research Lead',     icon:'🔎', model:'sonnet', theme:'ops',   status:'active', x:390, y:250, notes:'' },
+    { id:'ink',   name:'INK',    role:'Content Writer',    icon:'✍️', model:'sonnet', theme:'ops',   status:'active', x:390, y:340, notes:'' },
+    { id:'grace', name:'GRACE',  role:'Editor',            icon:'✨', model:'sonnet', theme:'ops',   status:'active', x:390, y:430, notes:'' },
+    { id:'vibe',  name:'VIBE',   role:'Social Media',      icon:'📱', model:'haiku',  theme:'ops',   status:'active', x:390, y:520, notes:'' },
+  ],
+  edges: [
+    { from:'ceo',   to:'aria',   label:'delegate',   style:'solid' },
+    { from:'aria',  to:'hawk',   label:'research',   style:'dashed' },
+    { from:'aria',  to:'atlas',  label:'analysis',   style:'dashed' },
+    { from:'aria',  to:'rex',    label:'build',      style:'dashed' },
+    { from:'aria',  to:'luna',   label:'design',     style:'dashed' },
+    { from:'aria',  to:'scout',  label:'content',    style:'dashed' },
+    { from:'aria',  to:'coin',   label:'finance',    style:'dashed' },
+    { from:'aria',  to:'lex',    label:'legal',      style:'dashed' },
+    { from:'hawk',  to:'blade',  label:'signal',     style:'solid' },
+    { from:'blade', to:'sage',   label:'risk check', style:'solid' },
+    { from:'sage',  to:'auto',   label:'execute',    style:'solid' },
+    { from:'atlas', to:'hawk',   label:'data feed',  style:'dotted' },
+    { from:'memo',  to:'blade',  label:'context',    style:'dotted' },
+    { from:'luna',  to:'pixel',  label:'critique',   style:'dashed' },
+    { from:'scout', to:'ink',    label:'brief',      style:'solid' },
+    { from:'ink',   to:'grace',  label:'draft',      style:'solid' },
+  ]
+};
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+function init() {
+  const saved = localStorage.getItem('hp_workflow');
+  if(saved) {
+    try {
+      const d = JSON.parse(saved);
+      nodes = d.nodes; edges = d.edges;
+    } catch(e) { loadDefault(); }
+  } else {
+    loadDefault();
+  }
+  render();
+}
+
+function loadDefault() {
+  nodes = DEFAULT_DATA.nodes.map(n => ({...n}));
+  edges = DEFAULT_DATA.edges.map(e => ({...e}));
+}
+
+// ═══════════════════════════════════════════════════════════
+// SAVE
+// ═══════════════════════════════════════════════════════════
+function save() {
+  localStorage.setItem('hp_workflow', JSON.stringify({nodes, edges}));
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════
+function render() {
+  const canvas = document.getElementById('canvas');
+  // remove old nodes
+  canvas.querySelectorAll('.node, .group-label, .edge-label').forEach(el => el.remove());
+
+  // update svg edges
+  renderEdges();
+
+  // render nodes
+  nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = `node ${n.theme}${n === selectedNode ? ' selected' : ''}`;
+    el.id = 'node-' + n.id;
+    el.style.left = n.x + 'px';
+    el.style.top  = n.y + 'px';
+    el.innerHTML = `
+      <div class="node-hdr">
+        <span class="node-icon">${n.icon}</span>
+        <span class="node-name">${n.name}</span>
+        <span class="node-dot${n.status ? ' '+n.status : ''}"></span>
+      </div>
+      <div class="node-body">
+        <div class="node-role">${n.role}</div>
+        <span class="node-model model-${n.model}">${n.model.toUpperCase()}</span>
+      </div>`;
+    el.addEventListener('mousedown', e => onNodeMouseDown(e, n));
+    el.addEventListener('click',     e => onNodeClick(e, n));
+    canvas.appendChild(el);
+  });
+
+  document.getElementById('node-count').textContent = nodes.length + ' nodes  ' + edges.length + ' edges';
+}
+
+// ── SVG edges ────────────────────────────────────────────────
+function renderEdges() {
+  const svg = document.getElementById('svg-layer');
+  const canvas = document.getElementById('canvas');
+  // resize svg to canvas
+  svg.setAttribute('width',  canvas.offsetWidth  || 1400);
+  svg.setAttribute('height', Math.max(canvas.scrollHeight, 900));
+
+  svg.innerHTML = `<defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#2a4080"/>
+    </marker>
+    <marker id="arr-hot" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4060c8"/>
+    </marker>
+  </defs>`;
+
+  edges.forEach((e, idx) => {
+    const fn = nodes.find(n => n.id === e.from);
+    const tn = nodes.find(n => n.id === e.to);
+    if(!fn || !tn) return;
+
+    const x1 = fn.x + 74, y1 = fn.y + 44;
+    const x2 = tn.x + 74, y2 = tn.y + 10;
+
+    const dx = x2 - x1, dy = y2 - y1;
+    const cx1 = x1 + dx*0.2, cy1 = y1 + Math.abs(dy)*0.5;
+    const cx2 = x2 - dx*0.2, cy2 = y2 - Math.abs(dy)*0.5;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const d = `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`;
+    path.setAttribute('d', d);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke', e.style === 'solid' ? '#2a4080' : '#1a2a50');
+    path.setAttribute('stroke-width', e.style === 'solid' ? '1.5' : '1');
+    path.setAttribute('stroke-dasharray',
+      e.style === 'dashed' ? '5,4' :
+      e.style === 'dotted' ? '2,3' : 'none');
+    path.setAttribute('marker-end','url(#arr)');
+    path.setAttribute('opacity','0.7');
+    path.dataset.idx = idx;
+
+    path.addEventListener('mouseenter', () => {
+      path.setAttribute('stroke','#4060c8');
+      path.setAttribute('stroke-width','2');
+      path.setAttribute('marker-end','url(#arr-hot)');
+      path.setAttribute('opacity','1');
+    });
+    path.addEventListener('mouseleave', () => {
+      path.setAttribute('stroke', e.style === 'solid' ? '#2a4080' : '#1a2a50');
+      path.setAttribute('stroke-width', e.style === 'solid' ? '1.5' : '1');
+      path.setAttribute('marker-end','url(#arr)');
+      path.setAttribute('opacity','0.7');
+    });
+    path.addEventListener('dblclick', () => {
+      if(confirm(`Delete edge: ${e.from} → ${e.to} (${e.label})?`)) {
+        edges.splice(idx, 1);
+        save(); render();
+      }
+    });
+
+    svg.appendChild(path);
+
+    // edge label
+    if(e.label) {
+      const mx = (x1+x2)/2, my = (y1+y2)/2;
+      const lbl = document.createElement('div');
+      lbl.className = 'edge-label';
+      lbl.style.left = (mx-20)+'px';
+      lbl.style.top  = (my-8)+'px';
+      lbl.textContent = e.label;
+      canvas.appendChild(lbl);
+    }
+  });
+
+  // connect-mode preview line
+  if(connectMode && connectFrom) {
+    const fn = connectFrom;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('id','preview-line');
+    line.setAttribute('x1', fn.x+74); line.setAttribute('y1', fn.y+44);
+    line.setAttribute('x2', fn.x+74); line.setAttribute('y2', fn.y+44);
+    line.setAttribute('stroke','#4060c8');
+    line.setAttribute('stroke-width','1.5');
+    line.setAttribute('stroke-dasharray','4,3');
+    svg.appendChild(line);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// DRAG
+// ═══════════════════════════════════════════════════════════
+function onNodeMouseDown(e, n) {
+  if(connectMode) return;
+  if(e.button !== 0) return;
+  dragging = n;
+  const rect = document.getElementById('node-'+n.id).getBoundingClientRect();
+  const canvRect = document.getElementById('canvas').getBoundingClientRect();
+  dragOffX = e.clientX - rect.left;
+  dragOffY = e.clientY - rect.top;
+  document.getElementById('node-'+n.id).classList.add('dragging');
+  e.stopPropagation();
+}
+
+document.addEventListener('mousemove', e => {
+  if(dragging) {
+    const canvRect = document.getElementById('canvas').getBoundingClientRect();
+    dragging.x = Math.max(0, e.clientX - canvRect.left - dragOffX);
+    dragging.y = Math.max(0, e.clientY - canvRect.top  - dragOffY);
+    const el = document.getElementById('node-'+dragging.id);
+    if(el) { el.style.left = dragging.x+'px'; el.style.top = dragging.y+'px'; }
+    renderEdges();
+    // update edge labels
+    document.querySelectorAll('.edge-label').forEach(l => l.remove());
+    edges.forEach(e2 => {
+      const fn = nodes.find(n => n.id === e2.from);
+      const tn = nodes.find(n => n.id === e2.to);
+      if(!fn || !tn || !e2.label) return;
+      const x1=fn.x+74, y1=fn.y+44, x2=tn.x+74, y2=tn.y+10;
+      const lbl = document.createElement('div');
+      lbl.className = 'edge-label';
+      lbl.style.left = ((x1+x2)/2-20)+'px';
+      lbl.style.top  = ((y1+y2)/2-8)+'px';
+      lbl.textContent = e2.label;
+      document.getElementById('canvas').appendChild(lbl);
+    });
+    return;
+  }
+  // connect mode — update preview
+  if(connectMode && connectFrom) {
+    const line = document.getElementById('preview-line');
+    if(line) {
+      const cr = document.getElementById('canvas').getBoundingClientRect();
+      line.setAttribute('x2', e.clientX - cr.left);
+      line.setAttribute('y2', e.clientY - cr.top);
+    }
+  }
+});
+
+document.addEventListener('mouseup', e => {
+  if(dragging) {
+    document.getElementById('node-'+dragging.id)?.classList.remove('dragging');
+    dragging = null;
+    save(); render();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// CLICK / SELECT / CONNECT
+// ═══════════════════════════════════════════════════════════
+function onNodeClick(e, n) {
+  e.stopPropagation();
+  if(dragging) return;
+
+  if(connectMode) {
+    if(!connectFrom) {
+      connectFrom = n;
+      document.getElementById('node-'+n.id).style.outline = '2px solid #6090e8';
+      return;
+    }
+    if(connectFrom !== n) {
+      const lbl = prompt('Edge label (optional):', '');
+      if(lbl !== null) {
+        const style = prompt('Style: solid / dashed / dotted', 'solid') || 'solid';
+        edges.push({ from: connectFrom.id, to: n.id, label: lbl, style });
+        save(); render();
+      }
+    }
+    // reset connect
+    document.getElementById('node-'+connectFrom.id).style.outline = '';
+    connectFrom = null;
+    connectMode = false;
+    document.body.classList.remove('connecting');
+    document.getElementById('btn-connect').textContent = '🔗 Connect';
+    return;
+  }
+
+  selectNode(n);
+}
+
+function selectNode(n) {
+  selectedNode = n;
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('p-name').value   = n.name;
+  document.getElementById('p-role').value   = n.role;
+  document.getElementById('p-icon').value   = n.icon;
+  document.getElementById('p-model').value  = n.model;
+  document.getElementById('p-theme').value  = n.theme;
+  document.getElementById('p-status').value = n.status || '';
+  document.getElementById('p-notes').value  = n.notes || '';
+  renderEdgeList(n);
+  render();
+}
+
+document.getElementById('canvas').addEventListener('click', e => {
+  if(e.target.id === 'canvas' || e.target.id === 'svg-layer') {
+    if(connectMode && connectFrom) {
+      document.getElementById('node-'+connectFrom.id).style.outline = '';
+      connectFrom = null;
+    } else {
+      selectedNode = null;
+      document.getElementById('panel').classList.remove('open');
+      render();
+    }
+  }
+});
+
+// ── Panel inputs live update ─────────────────────────────────
+['p-name','p-role','p-icon','p-model','p-theme','p-status','p-notes'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    if(!selectedNode) return;
+    selectedNode.name   = document.getElementById('p-name').value;
+    selectedNode.role   = document.getElementById('p-role').value;
+    selectedNode.icon   = document.getElementById('p-icon').value;
+    selectedNode.model  = document.getElementById('p-model').value;
+    selectedNode.theme  = document.getElementById('p-theme').value;
+    selectedNode.status = document.getElementById('p-status').value;
+    selectedNode.notes  = document.getElementById('p-notes').value;
+    save(); render();
+  });
+});
+
+// ── Edge list ────────────────────────────────────────────────
+function renderEdgeList(n) {
+  const list = document.getElementById('edge-list');
+  list.innerHTML = '';
+  edges.forEach((e, idx) => {
+    if(e.from !== n.id && e.to !== n.id) return;
+    const row = document.createElement('div');
+    row.className = 'edge-row';
+    const dir = e.from === n.id ? `→ ${e.to}` : `← ${e.from}`;
+    row.innerHTML = `<span>${dir}</span><span>${e.label||''}</span>
+      <button class="edge-del" data-idx="${idx}">✕</button>`;
+    list.appendChild(row);
+  });
+  list.querySelectorAll('.edge-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      edges.splice(parseInt(btn.dataset.idx), 1);
+      save(); renderEdgeList(n); render();
+    });
+  });
+}
+
+// ── Delete node ──────────────────────────────────────────────
+document.getElementById('del-node-btn').addEventListener('click', () => {
+  if(!selectedNode) return;
+  if(!confirm(`Delete node "${selectedNode.name}"?`)) return;
+  edges = edges.filter(e => e.from !== selectedNode.id && e.to !== selectedNode.id);
+  nodes = nodes.filter(n => n !== selectedNode);
+  selectedNode = null;
+  document.getElementById('panel').classList.remove('open');
+  save(); render();
+});
+
+// ═══════════════════════════════════════════════════════════
+// ADD NODE
+// ═══════════════════════════════════════════════════════════
+document.getElementById('add-node-btn').addEventListener('click', () => {
+  document.getElementById('modal').style.display = 'flex';
+});
+document.getElementById('m-cancel').addEventListener('click', () => {
+  document.getElementById('modal').style.display = 'none';
+});
+document.getElementById('m-ok').addEventListener('click', () => {
+  const name = document.getElementById('m-name').value.trim().toUpperCase() || 'NODE';
+  const id   = 'n' + Date.now();
+  nodes.push({
+    id, name, x: 300 + Math.random()*400, y: 300 + Math.random()*200,
+    role:  document.getElementById('m-role').value  || 'Agent',
+    icon:  document.getElementById('m-icon').value  || '🤖',
+    model: document.getElementById('m-model').value,
+    theme: document.getElementById('m-theme').value,
+    status:'active', notes:''
+  });
+  document.getElementById('modal').style.display = 'none';
+  document.getElementById('m-name').value = '';
+  document.getElementById('m-role').value = '';
+  document.getElementById('m-icon').value = '';
+  save(); render();
+});
+
+// ═══════════════════════════════════════════════════════════
+// CONNECT MODE
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-connect').addEventListener('click', () => {
+  connectMode = !connectMode;
+  connectFrom = null;
+  document.body.classList.toggle('connecting', connectMode);
+  document.getElementById('btn-connect').textContent = connectMode ? '✕ Cancel Connect' : '🔗 Connect';
+  if(!connectMode) renderEdges();
+});
+
+// ═══════════════════════════════════════════════════════════
+// EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-export').addEventListener('click', () => {
+  const json = JSON.stringify({nodes, edges}, null, 2);
+  const a = document.createElement('a');
+  a.href = 'data:application/json,' + encodeURIComponent(json);
+  a.download = 'hybridpro_workflow.json';
+  a.click();
+});
+
+document.getElementById('btn-import').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      nodes = d.nodes; edges = d.edges;
+      save(); render();
+    } catch(err) { alert('Invalid JSON file'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+// ── Reset ────────────────────────────────────────────────────
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if(!confirm('Reset to default layout?')) return;
+  localStorage.removeItem('hp_workflow');
+  loadDefault();
+  render();
+});
+
+// ── Keyboard shortcuts ───────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') {
+    if(connectMode) {
+      connectMode = false; connectFrom = null;
+      document.body.classList.remove('connecting');
+      document.getElementById('btn-connect').textContent = '🔗 Connect';
+      renderEdges();
+    }
+    selectedNode = null;
+    document.getElementById('panel').classList.remove('open');
+    render();
+  }
+  if(e.key === 'Delete' && selectedNode && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+    document.getElementById('del-node-btn').click();
+  }
+});
+
+// ── Resize SVG on window resize ──────────────────────────────
+window.addEventListener('resize', () => renderEdges());
+
+// ═══════════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
