@@ -745,7 +745,7 @@ void ChkAllTP() {
       }
       if(En2 && Count(MAGIC_2) > 0) {
          // ── M2 TP: รวม magic ที่ M2 กำลัง assist เข้า group ─────────
-         // เพื่อให้ AbsorbN ดึงไม้เสียของฝั่งที่ M2 ช่วยอยู่ออกด้วย
+         // เพื่อให้ Smart Recovery ดึงไม้เสียของฝั่งที่ M2 ช่วยอยู่ออกด้วย
          // Trigger active → รวม magic ที่ถูกล็อก / Normal → M2 เดี่ยว
          if(gTrig.active && gTrig.stoppedMagic == MAGIC_1) {
             // M2 assist M1(BUY stopped): winners=M2, absorb losers จาก M1+M2
