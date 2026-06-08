@@ -3,7 +3,8 @@
 //| M1=BUY grid (bidirectional) | M2=ADX/Trigger | M3=SELL grid     |
 //| PATCH v21:                                                       |
 //|   [1] GridLot() — แยก multiplier Up/Down ต่างกันสำหรับ M1, M3  |
-//|   [2] BuildTPGroup() — AbsorbN รวมทุก magic แล้ว sort หนักสุด  |
+//|   [2] Smart Recovery Engine — budget-based, smallest-loss-first  |
+//|       แทนที่ AbsorbN/AbsorbMinNet/AbsorbRatio                   |
 //+------------------------------------------------------------------+
 #property copyright "HybridPro"
 #property version   "21.00"
@@ -137,19 +138,12 @@ input bool   UsePairTP    = true;
 input double TPPair       = 10.0;
 input bool   UseTotTP     = true;
 input double TPTot        = 15.0;
-// AbsorbN: จำนวนไม้เสียหนักสุด (รวมทุก magic) ที่ดึงเข้า Group ต่อ 1 รอบ TP
-input int    AbsorbN      = 2;
-// AbsorbMinNet: net ขั้นต่ำหลังหักไม้เสีย (ป้องกัน fire ขาดทุน)
-// ตัวอย่าง: AbsorbMinNet=0.0 → net ต้องไม่ติดลบ (แนะนำ)
-//           AbsorbMinNet=1.0 → ต้องมีกำไรสุทธิอย่างน้อย $1 หลังหักไม้เสีย
-// *** เงื่อนไขการ fire: winners >= target และ net >= AbsorbMinNet ***
-input double AbsorbMinNet  = 0.0;
-// AbsorbRatio: อัตราส่วนขั้นต่ำ winners/|losers| ก่อนดึงไม้เสียออก
-// ตัวอย่าง: AbsorbRatio=3.0 → ต้องมีกำไร $3 ต่อขาดทุน $1 ที่ดึงออก
-//           AbsorbRatio=1.0 → กำไรต้องคุ้มทุนเท่านั้น (หลวมสุด)
-//           AbsorbRatio=0.0 → ปิด ratio check (พฤติกรรมเดิม)
-// ป้องกัน: กราฟผิดทาง + ขาดทุนหนัก → winners น้อย → ratio ไม่ผ่าน → ไม่ fire
-input double AbsorbRatio   = 3.0;
+input group "=== Smart Recovery Engine ==="
+// RecoveryRatio: % ของกำไร TP ที่จัดสรรไว้ล้างไม้เสีย
+// ตัวอย่าง: TP = $10, RecoveryRatio = 70% → RecoveryBudget = $7
+// ระบบจะเลือกไม้เสียที่ขาดทุน "น้อยที่สุด" ออกก่อนจนเต็ม budget
+// เงื่อนไข: Net หลังหักไม้เสีย >= 0 เท่านั้นจึงจะปิด
+input double RecoveryRatio = 70.0;  // % ของ winSum (0=ปิดใช้งาน)
 
 input group "=== Best Side Pool ==="
 // ปิดทั้ง pool เมื่อกำไรรวมถึงเป้า — ไม่ปิดแยกรายไม้ ไม่แยก magic
@@ -481,12 +475,68 @@ double GetCloseableGP(int m, ulong skipTk=0) {
 }
 
 //+------------------------------------------------------------------+
-//| [PATCH] BuildTPGroup — AbsorbN รวมทุก magic แล้ว sort หนักสุด  |
-//|                                                                  |
-//| เดิม: GetWorstLoss(magic, AbsorbN) แยกต่อ magic               |
-//|       → M1 ดึง N ไม้ + M3 ดึง N ไม้ = 2N ไม้ทั้งที่กำหนด N  |
-//| ใหม่: รวม loser ทุก magic → sort worst-first → เลือก N ไม้แรก |
-//|       → ได้ไม้เสียหนักสุดจริง N ไม้ ไม่แยก magic              |
+//| SelectRecoveryLosers                                             |
+//| เลือกไม้เสียที่ "ขาดทุนน้อยที่สุด" ออกก่อนจนเต็ม RecoveryBudget|
+//| criteria: smallest |loss| first → คุ้มค่าต่อพอร์ตที่สุด        |
+//| return: จำนวนไม้ที่เลือก, fill outTk[] outPf[] outNet           |
+//|         (outNet = winSum - |loserSum| ที่เลือก)                 |
+//+------------------------------------------------------------------+
+int SelectRecoveryLosers(int &mgs[], double winSum,
+                         ulong &outTk[], double &outPf[], double &outNet) {
+   ArrayResize(outTk, 0);
+   ArrayResize(outPf, 0);
+   outNet = winSum;
+
+   if(RecoveryRatio <= 0.0) return 0;
+
+   double budget = winSum * RecoveryRatio / 100.0;  // งบล้างไม้เสีย
+
+   int    totalPos = PositionsTotal();
+   ulong  lTk[];  ArrayResize(lTk, totalPos);
+   double lPf[];  ArrayResize(lPf, totalPos);
+   int    lCnt = 0;
+
+   int nm = ArraySize(mgs);
+   for(int i = totalPos - 1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(IsInBestPool(t)) continue;  // ห้ามแตะ BestPool
+      int m = (int)PositionGetInteger(POSITION_MAGIC);
+      bool inMgs = false;
+      for(int mi = 0; mi < nm; mi++) if(mgs[mi] == m) { inMgs = true; break; }
+      if(!inMgs) continue;
+      double pp = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(pp >= 0) continue;  // เอาเฉพาะไม้เสีย
+      lTk[lCnt] = t;
+      lPf[lCnt] = pp;
+      lCnt++;
+   }
+
+   if(lCnt == 0) return 0;
+
+   // เรียงจากขาดทุน "น้อยที่สุด" ก่อน (least negative first = descending by pnl)
+   if(lCnt > 1) SortPairsByPnl(lTk, lPf, lCnt, false);  // least negative first
+
+   int    cnt = 0;
+   double used = 0;
+   for(int i = 0; i < lCnt; i++) {
+      double loss = MathAbs(lPf[i]);
+      if(used + loss > budget) break;  // เต็ม budget แล้ว
+      used += loss;
+      ArrayResize(outTk, cnt + 1);
+      ArrayResize(outPf, cnt + 1);
+      outTk[cnt] = lTk[i];
+      outPf[cnt] = lPf[i];
+      cnt++;
+   }
+
+   outNet = winSum - used;  // net หลังหักไม้เสีย
+   return cnt;
+}
+
+//+------------------------------------------------------------------+
+//| BuildTPGroup — Smart Recovery Engine (budget-based, least-loss)  |
 //+------------------------------------------------------------------+
 int BuildTPGroup(int &mgs[], ulong &groupTk[], double &groupNet, double &winSum) {
    int nm = ArraySize(mgs);
@@ -512,46 +562,24 @@ int BuildTPGroup(int &mgs[], ulong &groupTk[], double &groupNet, double &winSum)
       }
    }
 
-   // ── ขั้น 3: AbsorbN — รวม loser จากทุก magic → sort → เลือก N หนักสุด
-   double loserSum = 0;
-   if(AbsorbN > 0) {
-      int    totalPos = PositionsTotal();
-      ulong  allLTk[]; ArrayResize(allLTk, totalPos);
-      double allLPf[]; ArrayResize(allLPf, totalPos);
-      int    allLCnt = 0;
+   // ── ขั้น 3: Smart Recovery — เลือกไม้เสียขาดทุนน้อยสุดที่เข้า budget
+   ulong  recTk[]; double recPf[]; double recNet;
+   int recN = SelectRecoveryLosers(mgs, winSum, recTk, recPf, recNet);
+   double loserSum = recNet - winSum;  // เป็นลบ
 
-      for(int mi = 0; mi < nm; mi++) {
-         ulong skipTk = bestTk[mi];
-         for(int i = totalPos - 1; i >= 0; i--) {
-            ulong t = PositionGetTicket(i);
-            if(!PositionSelectByTicket(t)) continue;
-            if((int)PositionGetInteger(POSITION_MAGIC) != mgs[mi]) continue;
-            if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-            if(skipTk > 0 && t == skipTk) continue;
-            if(IsInBestPool(t)) continue;  // ไม้ BestPool ห้ามถูกดึงเป็น loser ของ grid
-            double pp = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-            if(pp >= 0) continue;
-            allLTk[allLCnt] = t;
-            allLPf[allLCnt] = pp;
-            allLCnt++;
-         }
-      }
-
-      if(allLCnt > 1) SortPairsByPnl(allLTk, allLPf, allLCnt, true); // worst first
-
-      int takeL = MathMin(AbsorbN, allLCnt);
-      for(int i = 0; i < takeL; i++) {
+   // เงื่อนไข: net >= 0 (ไม่ปิดขาดทุนสุทธิ)
+   if(recN > 0 && recNet >= 0) {
+      for(int i = 0; i < recN; i++) {
          ArrayResize(groupTk, gCnt + 1);
-         groupTk[gCnt++] = allLTk[i];
-         loserSum += allLPf[i];
-         PrintFormat("[AbsorbN] ดึงไม้เสีย tk=%I64u pnl=%.2f (ลำดับ %d/%d)",
-                     allLTk[i], allLPf[i], i + 1, takeL);
+         groupTk[gCnt++] = recTk[i];
+         PrintFormat("[Recovery] ดึงไม้เสีย tk=%I64u pnl=%.2f budget_used=%.2f",
+                     recTk[i], recPf[i], MathAbs(recPf[i]));
       }
    }
 
-   groupNet = winSum + loserSum;
-   PrintFormat("[BuildTPGroup] winners=%.2f losers=%.2f net=%.2f pos=%d",
-               winSum, loserSum, groupNet, gCnt);
+   groupNet = (recN > 0 && recNet >= 0) ? recNet : winSum;
+   PrintFormat("[BuildTPGroup] winners=%.2f recovery=%d net=%.2f pos=%d",
+               winSum, recN, groupNet, gCnt);
    return gCnt;
 }
 
@@ -582,16 +610,8 @@ bool TryTP(int &mgs[], double target, string tag) {
    int n = BuildTPGroup(mgs, groupTk, groupNet, winSum);
    if(n == 0) return false;
 
-   // เงื่อนไข fire มี 2 ขั้น:
-   //   1) winners รวม >= target  → มีกำไรพอจ่าย TP ตามเป้า
-   //   2) net หลังหักไม้เสีย >= AbsorbMinNet  → ไม่ fire ขาดทุน
-   // แยก 2 เงื่อนไขออกจากกัน ทำให้ AbsorbN ทำงานได้เสมอเมื่อ winners ถึงเป้า
-   if(winSum  < target)       return false;  // winners ยังไม่ถึงเป้า
-   if(groupNet < AbsorbMinNet) return false;  // net หลังหักเสียต่ำเกินกำหนด
-   // ratio check: winners ต้องเป็น AbsorbRatio เท่าของขาดทุนที่ดึงออก
-   // ป้องกันกราฟผิดทาง (ขาดทุนหนัก) → ratio ต่ำ → ไม่ fire
-   double absLoss = winSum - groupNet;  // |loserSum| = winSum - groupNet
-   if(AbsorbRatio > 0.0 && absLoss > 0.0 && winSum < absLoss * AbsorbRatio) return false;
+   if(winSum < target)    return false;  // winners ยังไม่ถึงเป้า
+   if(groupNet < 0)       return false;  // net ติดลบ → ไม่ fire
 
    FireTPGroup(groupTk);
    gNormalTPFired = true;
@@ -666,46 +686,20 @@ void FireBestSidePool(ulong &poolTk[], ENUM_POSITION_TYPE dir, double target, in
    }
    if(alive == 0 || winSum < target) return;
 
-   int    total = PositionsTotal();
-   ulong  lTk[]; ArrayResize(lTk, total);
-   double lPf[]; ArrayResize(lPf, total);
-   int    lCnt = 0;
-   for(int i = total-1; i >= 0; i--) {
-      ulong t = PositionGetTicket(i);
-      if(!PositionSelectByTicket(t)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-      if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != dir) continue;
-      bool inPool = false;
-      for(int j=0; j<n; j++) if(poolTk[j]==t) { inPool=true; break; }
-      if(inPool) continue;
-      double pp = PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
-      if(pp >= 0) continue;
-      lTk[lCnt]=t; lPf[lCnt]=pp; lCnt++;
-   }
-   double loserSum = 0;
-   int absN = 0;
-   if(AbsorbN > 0 && lCnt > 0) {
-      if(lCnt > 1) SortPairsByPnl(lTk, lPf, lCnt, true);
-      absN = MathMin(AbsorbN, lCnt);
-      for(int i=0; i<absN; i++) loserSum += lPf[i];
-   }
+   // Smart Recovery: เลือกไม้เสียขาดทุนน้อยสุดในทิศเดียวกัน
+   int    mgsBoth[] = {MAGIC_1, MAGIC_2, MAGIC_3};  // BestSide ดู cross-magic
+   ulong  recTk[]; double recPf[]; double recNet;
+   int recN = SelectRecoveryLosers(mgsBoth, winSum, recTk, recPf, recNet);
 
-   double groupNet = winSum + loserSum;
-   if(groupNet < AbsorbMinNet) {
-      PrintFormat("[%s] skip net=%.2f < AbsorbMinNet=%.2f", tag, groupNet, AbsorbMinNet);
-      return;
-   }
-   double absLoss = winSum - groupNet;
-   if(AbsorbRatio > 0.0 && absLoss > 0.0 && winSum < absLoss * AbsorbRatio) {
-      PrintFormat("[%s] skip ratio=%.2f < AbsorbRatio=%.2f (win=%.2f loss=%.2f)",
-                  tag, winSum/absLoss, AbsorbRatio, winSum, absLoss);
+   if(recNet < 0) {
+      PrintFormat("[%s] skip net=%.2f < 0", tag, recNet);
       return;
    }
 
-   PrintFormat("[%s] winSum=%.2f net=%.2f target=%.2f winners=%d absorb=%d",
-               tag, winSum, groupNet, target, alive, absN);
+   PrintFormat("[%s] winSum=%.2f net=%.2f target=%.2f winners=%d recovery=%d",
+               tag, winSum, recNet, target, alive, recN);
 
-   for(int i=0; i<absN; i++)  CloseByTicket(lTk[i]);
+   for(int i=0; i<recN; i++)  CloseByTicket(recTk[i]);
    for(int i=0; i<n; i++)     CloseByTicket(poolTk[i]);
 }
 
