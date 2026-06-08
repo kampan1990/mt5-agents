@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>HybridPro EA — Workflow</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #07090f;
+  font-family: 'Courier New', monospace;
+  color: #c0d0e8;
+  overflow-x: auto;
+}
+
+/* ── TOP BAR ── */
+#topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 20px;
+  background: #0a0d1a;
+  border-bottom: 1px solid #1a2240;
+  position: sticky; top: 0; z-index: 100;
+}
+#topbar h1 { font-size: 12px; color: #ffc832; letter-spacing: 2px; }
+.legend { display: flex; gap: 12px; margin-left: 20px; flex-wrap: wrap; }
+.leg { display: flex; align-items: center; gap: 5px; font-size: 9px; color: #5a7090; }
+.leg-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+/* ── MAIN LAYOUT ── */
+#main {
+  display: flex;
+  min-height: calc(100vh - 40px);
+}
+
+/* ── SIDEBAR ── */
+#sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: #090c18;
+  border-right: 1px solid #141e38;
+  padding: 14px;
+  overflow-y: auto;
+  position: sticky;
+  top: 40px;
+  height: calc(100vh - 40px);
+}
+#sidebar h3 { font-size: 9px; color: #3a5080; letter-spacing: 2px; margin-bottom: 10px; }
+.info-card {
+  background: #0c1020;
+  border: 1px solid #1a2440;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.info-card h4 { font-size: 10px; color: #6080c0; margin-bottom: 6px; }
+.info-card p  { font-size: 9px; color: #5a7090; line-height: 1.6; }
+.param-tag {
+  display: inline-block;
+  background: #101828;
+  border: 1px solid #2a3a60;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 8px;
+  color: #60a0e0;
+  margin: 1px 1px;
+}
+.param-tag.warn { border-color: #604010; color: #e0a040; }
+.param-tag.red  { border-color: #601010; color: #e06060; }
+.param-tag.green{ border-color: #106040; color: #40c080; }
+
+.status-dot {
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.sd-green { background: #40d060; box-shadow: 0 0 4px #40d060; }
+.sd-yellow{ background: #e0b040; box-shadow: 0 0 4px #e0b040; }
+.sd-red   { background: #e04040; box-shadow: 0 0 4px #e04040; }
+.sd-blue  { background: #4080e0; box-shadow: 0 0 4px #4080e0; }
+
+/* ── CANVAS ── */
+#flow-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+}
+svg#flow {
+  display: block;
+  margin: 0 auto;
+}
+
+/* ── NODE STYLES ── */
+/* Process box */
+.fn-box { rx: 6; ry: 6; }
+
+/* Tooltip */
+.tooltip-group { display: none; }
+
+/* ── HIGHLIGHT ── */
+.hl-path { stroke-width: 2.5 !important; filter: drop-shadow(0 0 4px currentColor); }
+
+/* ── Section labels ── */
+.sec-lbl { font-family: 'Courier New'; font-size: 9px; letter-spacing: 1px; fill: #2a3860; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⚡ HYBRIDPRO V21 — OnTick WORKFLOW</h1>
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:#1a3060"></div> Process</div>
+    <div class="leg"><div class="leg-dot" style="background:#1e2a10;border-radius:50%"></div> Decision</div>
+    <div class="leg"><div class="leg-dot" style="background:#3a1010"></div> Stop/Reset</div>
+    <div class="leg"><div class="leg-dot" style="background:#0e2a1a"></div> TP Fire</div>
+    <div class="leg"><div class="leg-dot" style="background:#241040"></div> Runner</div>
+    <div class="leg"><div class="leg-dot" style="background:#302010"></div> Grid Open</div>
+  </div>
+</div>
+
+<div id="main">
+<!-- ── SIDEBAR ── -->
+<div id="sidebar">
+  <h3>SELECTED NODE INFO</h3>
+  <div id="info-default" class="info-card">
+    <h4>ℹ️ วิธีใช้</h4>
+    <p>Hover หรือ Click บน node/เส้นใน diagram เพื่อดูรายละเอียด logic และ parameters ที่เกี่ยวข้อง</p>
+  </div>
+  <div id="info-panel" class="info-card" style="display:none">
+    <h4 id="info-title">—</h4>
+    <p id="info-desc">—</p>
+    <div id="info-params" style="margin-top:6px"></div>
+  </div>
+
+  <div style="margin-top:16px">
+    <h3>QUICK REFERENCE</h3>
+    <div class="info-card">
+      <h4>🔄 OnTick Sequence</h4>
+      <p style="font-size:9px; line-height:2;">
+        1. Reset flags<br>
+        2. ADXDir()<br>
+        3. ChkDayRollover()<br>
+        4. UpdateRunners()<br>
+        5. ChkTrigger()<br>
+        6. ChkGrid1() — BUY<br>
+        7. ChkGrid3() — SELL<br>
+        8. ChkM2()<br>
+        9. ChkAllTP()<br>
+        10. ChkBestSideTP()<br>
+        11. ChkRunTP()<br>
+        12. Track DD<br>
+        13. ShowDashboard()
+      </p>
+    </div>
+    <div class="info-card">
+      <h4>⚡ TP Priority</h4>
+      <p style="font-size:9px; line-height:2;">
+        P1: TotTP (M1+M2+M3)<br>
+        P2: PairTP (best pair)<br>
+        P3: SepTP M1 / M2assist / M3<br>
+        + BestSideTP (BUY/SELL pool)<br>
+        + RunnerTP (pool ≥ N)
+      </p>
+    </div>
+    <div class="info-card">
+      <h4>🔐 M2 Modes</h4>
+      <p style="font-size:9px; line-height:2;">
+        <span class="status-dot sd-blue"></span>Normal: ตาม ADX dir<br>
+        <span class="status-dot sd-red"></span>Assist M1: SELL (M1 locked)<br>
+        <span class="status-dot sd-yellow"></span>Assist M3: BUY (M3 locked)<br>
+        ※ Assist mode ไม่ปิดตาม ADX
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── FLOW CANVAS ── -->
+<div id="flow-wrap">
+<svg id="flow" width="1060" height="2480"
+     viewBox="0 0 1060 2480"
+     xmlns="http://www.w3.org/2000/svg">
+
+<defs>
+  <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3z" fill="#2a4070"/>
+  </marker>
+  <marker id="arr-g" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3z" fill="#206040"/>
+  </marker>
+  <marker id="arr-r" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3z" fill="#602020"/>
+  </marker>
+  <marker id="arr-y" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3z" fill="#605010"/>
+  </marker>
+  <marker id="arr-p" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3z" fill="#402060"/>
+  </marker>
+</defs>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- BG SECTIONS -->
+<!-- ══════════════════════════════════════════════════════ -->
+<rect x="10" y="10"  width="1040" height="80"  rx="6" fill="#0c1020" stroke="#1a2440" stroke-width="1"/>
+<text x="22" y="28" class="sec-lbl">ONTICK ENTRY</text>
+
+<rect x="10" y="110" width="1040" height="120" rx="6" fill="#0c1020" stroke="#1a2440" stroke-width="1"/>
+<text x="22" y="128" class="sec-lbl">INIT PER TICK</text>
+
+<rect x="10" y="250" width="1040" height="260" rx="6" fill="#0c1020" stroke="#1a2240" stroke-width="1"/>
+<text x="22" y="268" class="sec-lbl">TRIGGER SYSTEM — ChkTrigger()</text>
+
+<rect x="10" y="530" width="1040" height="300" rx="6" fill="#0a0e1c" stroke="#1a2040" stroke-width="1"/>
+<text x="22" y="548" class="sec-lbl">GRID OPEN — ChkGrid1 / ChkGrid3 / ChkM2</text>
+
+<rect x="10" y="850" width="1040" height="480" rx="6" fill="#080e14" stroke="#182030" stroke-width="1"/>
+<text x="22" y="868" class="sec-lbl">TAKE PROFIT — ChkAllTP() Priority Chain</text>
+
+<rect x="10" y="1350" width="1040" height="240" rx="6" fill="#09090e" stroke="#181820" stroke-width="1"/>
+<text x="22" y="1368" class="sec-lbl">BEST SIDE TP — ChkBestSideTP()</text>
+
+<rect x="10" y="1610" width="1040" height="260" rx="6" fill="#0a0814" stroke="#181828" stroke-width="1"/>
+<text x="22" y="1628" class="sec-lbl">RUNNER SYSTEM — UpdateRunners / ChkRunTP</text>
+
+<rect x="10" y="1890" width="1040" height="160" rx="6" fill="#0a0c0a" stroke="#182018" stroke-width="1"/>
+<text x="22" y="1908" class="sec-lbl">EQUITY / DRAWDOWN TRACKING</text>
+
+<rect x="10" y="2070" width="1040" height="380" rx="6" fill="#0c0c10" stroke="#1a1a24" stroke-width="1"/>
+<text x="22" y="2088" class="sec-lbl">GRID LOT CALCULATION — GridLot()</text>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 1: ONTICK ENTRY -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<!-- START -->
+<g class="flownode" data-id="start"
+   data-title="OnTick() — Entry Point"
+   data-desc="ทุก tick ที่ราคาเปลี่ยน MT5 จะเรียก OnTick() ระบบทั้งหมดเริ่มจากที่นี่"
+   data-params="">
+  <rect x="430" y="20" width="200" height="34" rx="17" fill="#1a2a50" stroke="#3050a0" stroke-width="1.5"/>
+  <text x="530" y="42" text-anchor="middle" font-family="Courier New" font-size="11" fill="#80a8ff" font-weight="bold">⚡  OnTick()</text>
+</g>
+<!-- arrow down -->
+<line x1="530" y1="54" x2="530" y2="75" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 2: INIT PER TICK -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<!-- Reset flags -->
+<g class="flownode" data-id="reset"
+   data-title="Reset Per-Tick Flags"
+   data-desc="รีเซ็ต 2 flags ทุก tick ก่อนทำงาน:
+• gTrigJustFired = false → ป้องกัน M2 เปิดทันทีหลัง trigger fire
+• gNormalTPFired = false → ป้องกัน Runner TP ซ้อน Normal TP"
+   data-params='gTrigJustFired,gNormalTPFired'>
+  <rect x="370" y="80" width="320" height="34" rx="6" fill="#1a2040" stroke="#2a3860" stroke-width="1"/>
+  <text x="530" y="102" text-anchor="middle" font-family="Courier New" font-size="10" fill="#6080c0">reset: gTrigJustFired | gNormalTPFired</text>
+</g>
+<line x1="530" y1="114" x2="530" y2="128" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ADX + DayRollover + UpdateRunners (3 boxes in row) -->
+<g class="flownode" data-id="adx"
+   data-title="ADXDir() — ทิศทาง ADX"
+   data-desc="อ่าน ADX indicator บน Timeframe ที่กำหนด:
+• ADX value &lt; ADXMin → return 0 (Flat/Idle)
+• +DI &gt; -DI → return +1 (Uptrend)
+• +DI &lt; -DI → return -1 (Downtrend)
+ผลลัพธ์เก็บใน gADXDir ใช้โดย M2 normal mode"
+   data-params="UseADX,ADXTF,ADXPer,ADXMin">
+  <rect x="50" y="130" width="220" height="34" rx="6" fill="#1a2040" stroke="#2a3860" stroke-width="1"/>
+  <text x="160" y="152" text-anchor="middle" font-family="Courier New" font-size="9" fill="#5080b8">ADXDir() → gADXDir</text>
+</g>
+
+<g class="flownode" data-id="dayroll"
+   data-title="ChkDayRollover() — รีเซ็ตรายวัน"
+   data-desc="ตรวจว่าขึ้นวันใหม่หรือยัง:
+• ถ้าวันเปลี่ยน → reset gDailyLot1/2/3 = 0
+• ตั้ง gCalDirty = true เพื่อ rebuild calendar
+ควบคุมด้วย MaxDailyLot parameter"
+   data-params="MaxDailyLot">
+  <rect x="410" y="130" width="240" height="34" rx="6" fill="#1a2040" stroke="#2a3860" stroke-width="1"/>
+  <text x="530" y="152" text-anchor="middle" font-family="Courier New" font-size="9" fill="#5080b8">ChkDayRollover() → reset daily lots</text>
+</g>
+
+<g class="flownode" data-id="runners-update"
+   data-title="UpdateRunners() — อัพเดท Runner Pool"
+   data-desc="ทุก tick: หา Top-N positions กำไรสูงสุดจากทุก magic รวมกัน
+Flow:
+1. รวม positions กำไร &gt; 0 จาก M1+M2+M3
+2. Sort กำไรมาก → น้อย
+3. เลือก Top-RunKeepN → เป็น gRunTk[]
+4. ถ้า pool ครบ RunKeepN → วาง BE-SL ทุกตัว
+5. ถ้า pool ยังไม่ครบ → ไม่วาง BE (รอก่อน)"
+   data-params="RunKeepN,RunBEPts">
+  <rect x="790" y="130" width="220" height="34" rx="6" fill="#241040" stroke="#402060" stroke-width="1"/>
+  <text x="900" y="152" text-anchor="middle" font-family="Courier New" font-size="9" fill="#9060d0">UpdateRunners() → gRunTk[]</text>
+</g>
+
+<!-- arrows from reset to 3 boxes -->
+<path d="M530,114 L530,122 L160,122 L160,130" stroke="#2a4070" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)" fill="none"/>
+<path d="M530,114 L530,130" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)" fill="none"/>
+<path d="M530,114 L530,122 L900,122 L900,130" stroke="#2a4070" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)" fill="none"/>
+
+<!-- merge down to trigger -->
+<path d="M160,164 L160,220 L530,220 L530,260" stroke="#2a4070" stroke-width="1" stroke-dasharray="3,2" fill="none"/>
+<path d="M530,164 L530,260" stroke="#2a4070" stroke-width="1.5" fill="none"/>
+<path d="M900,164 L900,220 L530,220" stroke="#2a4070" stroke-width="1" stroke-dasharray="3,2" fill="none"/>
+<line x1="530" y1="220" x2="530" y2="258" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 3: TRIGGER -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<!-- Decision: Trigger active? -->
+<g class="flownode" data-id="trig-active"
+   data-title="ChkTrigger() — ตรวจ Loss Trigger"
+   data-desc="ระบบป้องกันขาดทุนหนักโดยหยุด grid ฝั่งใดฝั่งหนึ่ง"
+   data-params="LossTrig1,LossTrig3,TrigCoolSec">
+  <polygon points="530,262 660,300 530,338 400,300" fill="#1a2410" stroke="#304818" stroke-width="1.5"/>
+  <text x="530" y="297" text-anchor="middle" font-family="Courier New" font-size="10" fill="#80b840">gTrig.active?</text>
+  <text x="530" y="312" text-anchor="middle" font-family="Courier New" font-size="8" fill="#506030">Loss Trigger state</text>
+</g>
+
+<!-- YES → check recovery -->
+<line x1="660" y1="300" x2="780" y2="300" stroke="#e0a040" stroke-width="1.5" marker-end="url(#arr-y)"/>
+<text x="705" y="294" font-family="Courier New" font-size="8" fill="#805820">YES</text>
+
+<g class="flownode" data-id="trig-recover"
+   data-title="Trigger Active — Check Recovery"
+   data-desc="เมื่อ magic ถูก lock อยู่:
+1. ตรวจว่า magic อื่นแย่กว่าไหม → ถ้าใช่ switch lock ไปที่แย่กว่า
+2. CountLosers(stoppedMagic) == 0 AND PNL &gt;= 0 → RECOVERED
+   → unlock, reset gLastBuy/gLastSell
+   → set TrigCoolEnd = now + TrigCoolSec
+   → ปิด M2 (CM MAGIC_2)
+3. ถ้ายังไม่ recover → คงสถานะ lock ไว้"
+   data-params="TrigCoolSec,LossTrig1,LossTrig3">
+  <rect x="785" y="280" width="200" height="40" rx="6" fill="#302010" stroke="#605020" stroke-width="1.5"/>
+  <text x="885" y="298" text-anchor="middle" font-family="Courier New" font-size="9" fill="#d09040">Check Recovery</text>
+  <text x="885" y="313" text-anchor="middle" font-family="Courier New" font-size="8" fill="#806030">CountLosers==0 &amp;&amp; PNL≥0?</text>
+</g>
+
+<!-- NO → check cooldown -->
+<line x1="400" y1="300" x2="160" y2="300" stroke="#405030" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<text x="265" y="294" font-family="Courier New" font-size="8" fill="#305020">NO (normal)</text>
+
+<g class="flownode" data-id="trig-cooldown"
+   data-title="Cooldown Check"
+   data-desc="หลัง unlock จะมี cooldown period:
+• TimeCurrent() &lt; gTrigCoolEnd → skip trigger check (ยังพัก)
+• หมด cooldown → ตรวจ PNL(M1) และ PNL(M3)
+  ถ้า PNL &lt;= -LossTrig → fire trigger
+  เลือก magic ที่ขาดทุนหนักที่สุด"
+   data-params="TrigCoolSec,LossTrig1,LossTrig3">
+  <polygon points="160,300 280,340 160,380 40,340" fill="#101a10" stroke="#1e3018" stroke-width="1.5"/>
+  <text x="160" y="337" text-anchor="middle" font-family="Courier New" font-size="9" fill="#60a050">Cooldown?</text>
+  <text x="160" y="352" text-anchor="middle" font-family="Courier New" font-size="8" fill="#405030">TrigCoolEnd</text>
+</g>
+
+<!-- cooldown YES → skip -->
+<line x1="160" y1="380" x2="160" y2="420" stroke="#404040" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)"/>
+<text x="168" y="406" font-family="Courier New" font-size="8" fill="#404040">still cooling</text>
+
+<!-- cooldown NO → check PNL -->
+<line x1="280" y1="340" x2="380" y2="340" stroke="#204028" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<text x="308" y="334" font-family="Courier New" font-size="8" fill="#40a060">clear</text>
+
+<g class="flownode" data-id="trig-fire"
+   data-title="Fire Trigger — Lock Magic"
+   data-desc="PNL(M1) ≤ -LossTrig1 หรือ PNL(M3) ≤ -LossTrig3:
+• เลือก magic ที่ขาดทุนหนักสุด
+• gTrig.active = true
+• gTrig.stoppedMagic = M1 หรือ M3
+• CM(MAGIC_2) → ปิด M2 ทั้งหมด
+• gTrigJustFired = true → ป้องกัน M2 เปิดทันที
+• บันทึก trigPrice"
+   data-params="LossTrig1,LossTrig3">
+  <rect x="385" y="320" width="200" height="40" rx="6" fill="#3a1010" stroke="#701818" stroke-width="1.5"/>
+  <text x="485" y="338" text-anchor="middle" font-family="Courier New" font-size="9" fill="#ff6060">TRIGGER FIRE!</text>
+  <text x="485" y="353" text-anchor="middle" font-family="Courier New" font-size="8" fill="#903030">Lock M1 or M3 + close M2</text>
+</g>
+
+<!-- arrows from trigger to next -->
+<path d="M530,338 L530,450 L530,458" stroke="#2a4070" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+<path d="M885,320 L885,440 L530,440 L530,458" stroke="#605020" stroke-width="1" stroke-dasharray="3,2" fill="none" marker-end="url(#arr)"/>
+<path d="M160,420 L160,440 L530,440" stroke="#404040" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+<path d="M485,360 L485,440 L530,440" stroke="#701818" stroke-width="1" stroke-dasharray="3,2" fill="none"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 4: GRID OPEN -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<!-- ChkGrid1 -->
+<g class="flownode" data-id="grid1-check"
+   data-title="ChkGrid1() — BUY Grid M1"
+   data-desc="เงื่อนไขเปิด BUY:
+1. En1 == true
+2. gTrig.active &amp;&amp; stoppedMagic == M1 → SKIP (locked)
+3. cnt == 0 → เปิดไม้แรก Lot1
+4. cnt &lt; MaxGrid1 AND |ASK - gLastBuy| ≥ GS1 points
+5. priceDir = +1 ถ้า ASK &gt; gLastBuy (กราฟขึ้น)
+             = -1 ถ้า ASK &lt; gLastBuy (กราฟลง)
+6. lot = GridLot(M1, level, priceDir)"
+   data-params="En1,Lot1,GS1,MaxGrid1,LotMultDown1,LotMultUp1">
+  <rect x="60" y="460" width="240" height="50" rx="6" fill="#102030" stroke="#1e4060" stroke-width="1.5"/>
+  <text x="180" y="480" text-anchor="middle" font-family="Courier New" font-size="10" fill="#4090d0" font-weight="bold">ChkGrid1() — BUY</text>
+  <text x="180" y="497" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a6090">M1: ↕ BUY Grid bidirectional</text>
+</g>
+
+<!-- ChkGrid3 -->
+<g class="flownode" data-id="grid3-check"
+   data-title="ChkGrid3() — SELL Grid M3"
+   data-desc="เงื่อนไขเปิด SELL:
+1. En3 == true
+2. gTrig.active &amp;&amp; stoppedMagic == M3 → SKIP (locked)
+3. cnt == 0 → เปิดไม้แรก Lot3
+4. cnt &lt; MaxGrid3 AND |BID - gLastSell| ≥ GS3 points
+5. priceDir = +1 ถ้า BID &gt; gLastSell (กราฟขึ้น)
+             = -1 ถ้า BID &lt; gLastSell (กราฟลง)
+6. lot = GridLot(M3, level, priceDir)"
+   data-params="En3,Lot3,GS3,MaxGrid3,LotMultUp3,LotMultDown3">
+  <rect x="390" y="460" width="280" height="50" rx="6" fill="#201008" stroke="#482018" stroke-width="1.5"/>
+  <text x="530" y="480" text-anchor="middle" font-family="Courier New" font-size="10" fill="#d08040" font-weight="bold">ChkGrid3() — SELL</text>
+  <text x="530" y="497" text-anchor="middle" font-family="Courier New" font-size="8" fill="#7040208">M3: ↕ SELL Grid bidirectional</text>
+</g>
+
+<!-- ChkM2 -->
+<g class="flownode" data-id="m2-check"
+   data-title="ChkM2() — ADX / Assist Mode"
+   data-desc="Logic M2:
+1. gTrigJustFired → SKIP (ป้องกันเปิดทันที)
+2. กำหนด dir:
+   • gTrig.active + M1 locked → dir = -1 (SELL assist)
+   • gTrig.active + M3 locked → dir = +1 (BUY assist)
+   • Normal → dir = gADXDir
+3. dir == 0 → SKIP
+4. ถ้า !gTrig.active: ตรวจ M2 ที่เปิดอยู่ ทิศผิด → CM(M2)
+   ถ้า gTrig.active: ห้ามปิด M2 (ออกตาม TP เท่านั้น)
+5. cnt &lt; MaxGrid2 → เปิด order"
+   data-params="En2,Lot2,LotMult2,GS2,MaxGrid2">
+  <rect x="760" y="460" width="240" height="50" rx="6" fill="#181028" stroke="#302050" stroke-width="1.5"/>
+  <text x="880" y="480" text-anchor="middle" font-family="Courier New" font-size="10" fill="#9060d0" font-weight="bold">ChkM2()</text>
+  <text x="880" y="497" text-anchor="middle" font-family="Courier New" font-size="8" fill="#604080">ADX trend / Trigger assist</text>
+</g>
+
+<!-- from trigger section down to grid -->
+<path d="M530,458 L530,455 L180,455 L180,460" stroke="#1a3050" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M530,458 L530,460" stroke="#2a4070" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+<path d="M530,458 L530,455 L880,455 L880,460" stroke="#1a3050" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<!-- M2 mode boxes -->
+<g class="flownode" data-id="m2-assist-sell"
+   data-title="M2 Assist Mode — SELL"
+   data-desc="เมื่อ M1 ถูก lock (BUY grid หยุด):
+• M2 เปิด SELL เพื่อทำกำไรสวนทาง
+• ไม่ปิดตาม ADX ขณะ assist
+• ออกตาม SepTP[M2+M1assist] เท่านั้น
+  → TryTP([M2, M1], TP2, 'SepTP[M2+M1assist]')"
+   data-params="TP2,AbsorbN,AbsorbMinNet">
+  <rect x="650" y="540" width="200" height="34" rx="6" fill="#2a0a0a" stroke="#581010" stroke-width="1"/>
+  <text x="750" y="555" text-anchor="middle" font-family="Courier New" font-size="9" fill="#e06060">Assist M1: SELL</text>
+  <text x="750" y="569" text-anchor="middle" font-family="Courier New" font-size="8" fill="#802020">exit with M1 TP group</text>
+</g>
+
+<g class="flownode" data-id="m2-assist-buy"
+   data-title="M2 Assist Mode — BUY"
+   data-desc="เมื่อ M3 ถูก lock (SELL grid หยุด):
+• M2 เปิด BUY เพื่อทำกำไรสวนทาง
+• ไม่ปิดตาม ADX ขณะ assist
+• ออกตาม SepTP[M2+M3assist] เท่านั้น
+  → TryTP([M2, M3], TP2, 'SepTP[M2+M3assist]')"
+   data-params="TP2,AbsorbN,AbsorbMinNet">
+  <rect x="860" y="540" width="180" height="34" rx="6" fill="#0a2010" stroke="#105818" stroke-width="1"/>
+  <text x="950" y="555" text-anchor="middle" font-family="Courier New" font-size="9" fill="#40e080">Assist M3: BUY</text>
+  <text x="950" y="569" text-anchor="middle" font-family="Courier New" font-size="8" fill="#208040">exit with M3 TP group</text>
+</g>
+
+<g class="flownode" data-id="m2-adx"
+   data-title="M2 Normal Mode — ADX"
+   data-desc="Normal mode (ไม่มี trigger):
+• gADXDir == +1 → เปิด BUY
+• gADXDir == -1 → เปิด SELL
+• gADXDir == 0 → SKIP (ADX flat)
+• ADX เปลี่ยนทิศ → ปิด M2 ที่มีอยู่ แล้วเปิดทิศใหม่"
+   data-params="UseADX,ADXMin,TP2">
+  <rect x="450" y="540" width="180" height="34" rx="6" fill="#0a1028" stroke="#182040" stroke-width="1"/>
+  <text x="540" y="555" text-anchor="middle" font-family="Courier New" font-size="9" fill="#6090d0">Normal: ADX dir</text>
+  <text x="540" y="569" text-anchor="middle" font-family="Courier New" font-size="8" fill="#304060">flip on ADX change</text>
+</g>
+
+<line x1="880" y1="510" x2="880" y2="540" stroke="#302050" stroke-width="1" stroke-dasharray="2,3" marker-end="url(#arr)"/>
+<line x1="880" y1="510" x2="750" y2="540" stroke="#402010" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+<line x1="880" y1="510" x2="950" y2="540" stroke="#104010" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+<text x="756" y="532" font-family="Courier New" font-size="8" fill="#603020">M1 locked</text>
+<text x="888" y="532" font-family="Courier New" font-size="8" fill="#206030">M3 locked</text>
+<text x="820" y="527" font-family="Courier New" font-size="8" fill="#304060">normal</text>
+<line x1="750" y1="540" x2="750" y2="540" stroke="#402010" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr-r)"/>
+<line x1="950" y1="540" x2="950" y2="540" stroke="#104010" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr-g)"/>
+<line x1="540" y1="510" x2="540" y2="540" stroke="#182040" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<!-- OpenOrder guard -->
+<g class="flownode" data-id="oo-guard"
+   data-title="OO() Guard Checks"
+   data-desc="ทุก order ผ่านเงื่อนไขเหล่านี้ก่อนเปิดจริง:
+1. SpreadOK(): Spread ≤ MaxSpread
+2. Daily Lot: used + lot ≤ MaxDailyLot (ถ้า MaxDailyLot &gt; 0)
+3. Zone Check: ไม่มี position ทิศเดียวกันใกล้กัน &lt; GS points
+ถ้าไม่ผ่านข้อใด → ไม่เปิด order"
+   data-params="MaxSpread,MaxDailyLot">
+  <rect x="350" y="600" width="360" height="34" rx="6" fill="#101820" stroke="#1e2c38" stroke-width="1"/>
+  <text x="530" y="618" text-anchor="middle" font-family="Courier New" font-size="9" fill="#4080a8">OO() Guard: Spread | DailyLot | ZoneCheck</text>
+  <text x="530" y="630" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5060">pass all → place order | fail → skip</text>
+</g>
+
+<!-- arrows to OO guard -->
+<path d="M180,510 L180,615 L350,615" stroke="#1e4060" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M530,510 L530,600" stroke="#482018" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M750,574 L750,615 L710,615" stroke="#581010" stroke-width="1" stroke-dasharray="2,2" fill="none" marker-end="url(#arr)"/>
+<path d="M950,574 L950,640 L740,640 L740,630" stroke="#105818" stroke-width="1" stroke-dasharray="2,2" fill="none" marker-end="url(#arr)"/>
+<path d="M540,574 L540,600" stroke="#182040" stroke-width="1" stroke-dasharray="2,2" fill="none" marker-end="url(#arr)"/>
+
+<line x1="530" y1="634" x2="530" y2="658" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 5: TAKE PROFIT -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<!-- ChkAllTP -->
+<g class="flownode" data-id="chkalltp"
+   data-title="ChkAllTP() — Take Profit System"
+   data-desc="ระบบ TP มี 3 ระดับ Priority (หยุดเมื่อ fire ได้):
+P1 → TotTP: ปิดรวม M1+M2+M3
+P2 → PairTP: ปิดคู่กำไรสูงสุด
+P3 → SepTP: ปิดแยกแต่ละ magic
+
+เงื่อนไข fire (TryTP):
+• winSum ≥ target
+• groupNet ≥ AbsorbMinNet"
+   data-params="UseTotTP,TPTot,UsePairTP,TPPair,UseSepTP,TP1,TP2,TP3,AbsorbN,AbsorbMinNet">
+  <rect x="340" y="660" width="380" height="44" rx="6" fill="#0c1820" stroke="#162a38" stroke-width="1.5"/>
+  <text x="530" y="680" text-anchor="middle" font-family="Courier New" font-size="11" fill="#4090b8" font-weight="bold">ChkAllTP() — Priority Chain</text>
+  <text x="530" y="696" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5060">P1: TotTP → P2: PairTP → P3: SepTP</text>
+</g>
+
+<line x1="530" y1="704" x2="530" y2="720" stroke="#162a38" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- P1 TotTP -->
+<g class="flownode" data-id="tottp"
+   data-title="P1 — TotTP (Total Take Profit)"
+   data-desc="ปิดรวม M1+M2+M3 ทั้งหมด:
+• winSum(M1+M2+M3) ≥ TPTot → fire
+• BuildTPGroup([M1,M2,M3]):
+  - รวม winners ทุก magic
+  - AbsorbN ไม้เสียหนักสุด (รวมทุก magic)
+  - loserSum + winSum = groupNet
+• ถ้า fire: FireTPGroup() → ปิดทุกตัวใน group
+• ถ้าไม่ fire → ไปต่อ P2"
+   data-params="UseTotTP,TPTot,AbsorbN,AbsorbMinNet">
+  <polygon points="530,722 640,758 530,794 420,758" fill="#0e1e2c" stroke="#1a3a58" stroke-width="1.5"/>
+  <text x="530" y="755" text-anchor="middle" font-family="Courier New" font-size="9" fill="#5090c0">P1: TotTP</text>
+  <text x="530" y="770" text-anchor="middle" font-family="Courier New" font-size="8" fill="#305070">winSum ≥ TPTot?</text>
+</g>
+
+<!-- FIRE -->
+<line x1="640" y1="758" x2="760" y2="758" stroke="#0a6020" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<text x="680" y="752" font-family="Courier New" font-size="8" fill="#40b060">FIRE ✓</text>
+
+<g class="flownode" data-id="tp-fire-tot"
+   data-title="FireTPGroup() — ปิด Group"
+   data-desc="ปิด positions ใน group:
+1. Sort loser ก่อน (ปิดขาดทุนก่อน)
+2. ปิดทุกตัวตามลำดับ
+3. set gNormalTPFired = true
+   → ป้องกัน ChkRunTP ซ้อน"
+   data-params="">
+  <rect x="765" y="738" width="160" height="40" rx="6" fill="#0a2810" stroke="#106020" stroke-width="1.5"/>
+  <text x="845" y="755" text-anchor="middle" font-family="Courier New" font-size="9" fill="#40d060">FireTPGroup()</text>
+  <text x="845" y="769" text-anchor="middle" font-family="Courier New" font-size="8" fill="#208040">gNormalTPFired=true</text>
+</g>
+
+<!-- NOT FIRE → P2 -->
+<line x1="530" y1="794" x2="530" y2="820" stroke="#162a38" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)"/>
+<text x="538" y="812" font-family="Courier New" font-size="8" fill="#304050">not yet →</text>
+
+<!-- P2 PairTP -->
+<g class="flownode" data-id="pairtp"
+   data-title="P2 — PairTP (Pair Take Profit)"
+   data-desc="ทดสอบทุกคู่ (M1+M2, M1+M3, M2+M3):
+• เลือกคู่ที่ winSum สูงสุด
+• winSum(pair) ≥ TPPair → fire
+• BuildTPGroup([pA, pB]):
+  - winners จากทั้ง 2 magic
+  - AbsorbN ไม้เสียหนักสุด (รวม 2 magic)
+• ถ้าไม่ fire → ไปต่อ P3"
+   data-params="UsePairTP,TPPair,AbsorbN,AbsorbMinNet">
+  <polygon points="530,822 640,858 530,894 420,858" fill="#0e1e2c" stroke="#1a3a58" stroke-width="1.5"/>
+  <text x="530" y="855" text-anchor="middle" font-family="Courier New" font-size="9" fill="#5090c0">P2: PairTP</text>
+  <text x="530" y="870" text-anchor="middle" font-family="Courier New" font-size="8" fill="#305070">best pair winSum ≥ TPPair?</text>
+</g>
+
+<line x1="640" y1="858" x2="765" y2="858" stroke="#0a6020" stroke-width="1.5" marker-end="url(#arr-g)"/>
+<text x="680" y="852" font-family="Courier New" font-size="8" fill="#40b060">FIRE ✓</text>
+<line x1="765" y1="858" x2="765" y2="778" stroke="#106020" stroke-width="1" stroke-dasharray="3,2" fill="none" marker-end="url(#arr-g)"/>
+
+<line x1="530" y1="894" x2="530" y2="915" stroke="#162a38" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)"/>
+<text x="538" y="912" font-family="Courier New" font-size="8" fill="#304050">not yet →</text>
+
+<!-- P3 SepTP -->
+<g class="flownode" data-id="septp"
+   data-title="P3 — SepTP (Separate Take Profit)"
+   data-desc="ปิดแยกแต่ละ magic:
+• M1 (ถ้าไม่ถูก lock): TryTP([M1], TP1)
+• M2:
+  - Assist M1: TryTP([M2,M1], TP2)
+  - Assist M3: TryTP([M2,M3], TP2)
+  - Normal: TryTP([M2], TP2)
+• M3 (ถ้าไม่ถูก lock): TryTP([M3], TP3)"
+   data-params="UseSepTP,TP1,TP2,TP3,AbsorbN,AbsorbMinNet">
+  <rect x="380" y="918" width="300" height="44" rx="6" fill="#0e1e2c" stroke="#1a3a58" stroke-width="1.5"/>
+  <text x="530" y="938" text-anchor="middle" font-family="Courier New" font-size="10" fill="#4090b8" font-weight="bold">P3: SepTP</text>
+  <text x="530" y="953" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5060">M1 / M2-assist / M3 แยกกัน</text>
+</g>
+
+<!-- SepTP sub-boxes -->
+<g class="flownode" data-id="septp-m1"
+   data-title="SepTP — M1 (BUY grid)"
+   data-desc="TryTP([MAGIC_1], TP1):
+• Skip ถ้า M1 ถูก lock (gTrig.stoppedMagic == M1)
+• winSum(M1) ≥ TP1 AND groupNet ≥ AbsorbMinNet → fire
+• AbsorbN: ดึงไม้เสียหนักสุด N ไม้จาก M1"
+   data-params="TP1,AbsorbN,AbsorbMinNet">
+  <rect x="60" y="985" width="180" height="34" rx="6" fill="#0e2030" stroke="#1a4060" stroke-width="1"/>
+  <text x="150" y="1000" text-anchor="middle" font-family="Courier New" font-size="9" fill="#4090d0">SepTP[M1]</text>
+  <text x="150" y="1013" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5080">winSum ≥ TP1</text>
+</g>
+
+<g class="flownode" data-id="septp-m2"
+   data-title="SepTP — M2 (ADX/Assist)"
+   data-desc="M2 TP ขึ้นอยู่กับโหมด:
+Normal: TryTP([M2], TP2)
+Assist M1: TryTP([M2,M1], TP2)
+  → winners=M2, absorb losers จาก M2+M1
+Assist M3: TryTP([M2,M3], TP2)
+  → winners=M2, absorb losers จาก M2+M3"
+   data-params="TP2,AbsorbN,AbsorbMinNet">
+  <rect x="420" y="985" width="220" height="34" rx="6" fill="#181030" stroke="#301a58" stroke-width="1"/>
+  <text x="530" y="1000" text-anchor="middle" font-family="Courier New" font-size="9" fill="#9060d0">SepTP[M2]</text>
+  <text x="530" y="1013" text-anchor="middle" font-family="Courier New" font-size="8" fill="#503070">normal/assist mode</text>
+</g>
+
+<g class="flownode" data-id="septp-m3"
+   data-title="SepTP — M3 (SELL grid)"
+   data-desc="TryTP([MAGIC_3], TP3):
+• Skip ถ้า M3 ถูก lock (gTrig.stoppedMagic == M3)
+• winSum(M3) ≥ TP3 AND groupNet ≥ AbsorbMinNet → fire
+• AbsorbN: ดึงไม้เสียหนักสุด N ไม้จาก M3"
+   data-params="TP3,AbsorbN,AbsorbMinNet">
+  <rect x="820" y="985" width="180" height="34" rx="6" fill="#201008" stroke="#482010" stroke-width="1"/>
+  <text x="910" y="1000" text-anchor="middle" font-family="Courier New" font-size="9" fill="#d08040">SepTP[M3]</text>
+  <text x="910" y="1013" text-anchor="middle" font-family="Courier New" font-size="8" fill="#7040200">winSum ≥ TP3</text>
+</g>
+
+<!-- arrows from SepTP to sub -->
+<path d="M530,962 L530,970 L150,970 L150,985" stroke="#1a3a58" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<line x1="530" y1="962" x2="530" y2="985" stroke="#1a3a58" stroke-width="1" stroke-dasharray="2,3" marker-end="url(#arr)"/>
+<path d="M530,962 L530,970 L910,970 L910,985" stroke="#1a3a58" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<!-- BuildTPGroup detail box -->
+<g class="flownode" data-id="buildtp"
+   data-title="BuildTPGroup() — หัวใจของ TP"
+   data-desc="ทำงานทุกครั้งที่ TryTP() ถูกเรียก:
+ขั้น 1: หา BestTk (ไม้กำไรสูงสุด) แต่ละ magic → ห้ามปิด
+ขั้น 2: รวม Winners ทุกตัว (กำไร&gt;0, ไม่ใช่ BestTk, ไม่ใช่ Runner)
+         → winSum = ผลรวมกำไร winners
+ขั้น 3: AbsorbN ไม้เสียหนักสุด
+         รวม losers ทุก magic ใน group → sort worst-first
+         เลือก N ไม้แรก → loserSum
+ขั้น 4: groupNet = winSum + loserSum
+
+เงื่อนไข fire:
+• winSum ≥ target (มีกำไรพอ)
+• groupNet ≥ AbsorbMinNet (net ไม่ติดลบเกิน)"
+   data-params="AbsorbN,AbsorbMinNet">
+  <rect x="60" y="1060" width="880" height="54" rx="6" fill="#0a1828" stroke="#142840" stroke-width="1.5"/>
+  <text x="500" y="1082" text-anchor="middle" font-family="Courier New" font-size="10" fill="#5080a8" font-weight="bold">BuildTPGroup() — Winners + AbsorbN Losers → groupNet</text>
+  <text x="500" y="1098" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a4060">Fire condition: winSum ≥ target  AND  groupNet ≥ AbsorbMinNet</text>
+</g>
+
+<path d="M150,1019 L150,1055 L500,1055 L500,1060" stroke="#1a4060" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M530,1019 L530,1055 L500,1055" stroke="#301a58" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+<path d="M910,1019 L910,1055 L500,1055" stroke="#482010" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+
+<line x1="500" y1="1114" x2="500" y2="1130" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 6: BEST SIDE TP -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<g class="flownode" data-id="bestsidetp"
+   data-title="ChkBestSideTP() — Best Side Pool TP"
+   data-desc="แยก BUY pool และ SELL pool ข้ามทุก magic:
+
+BUY Pool:
+• รวมไม้ BUY กำไร &gt; 0 จากทุก magic
+• Sort กำไรมาก → น้อย
+• เลือก Top-BestBuyN ไม้
+• sum ≥ TPBestBuy → ปิดทั้ง pool พร้อมกัน
+
+SELL Pool:
+• รวมไม้ SELL กำไร &gt; 0 จากทุก magic
+• Sort กำไรมาก → น้อย
+• เลือก Top-BestSellN ไม้
+• sum ≥ TPBestSell → ปิดทั้ง pool พร้อมกัน
+
+ไม่แยก magic — รวม M1+M2 BUY / M3+M2 SELL"
+   data-params="BestBuyN,TPBestBuy,BestSellN,TPBestSell">
+  <rect x="60" y="1133" width="880" height="50" rx="6" fill="#101820" stroke="#1a2c38" stroke-width="1.5"/>
+  <text x="500" y="1155" text-anchor="middle" font-family="Courier New" font-size="10" fill="#4090b0" font-weight="bold">ChkBestSideTP()</text>
+  <text x="500" y="1170" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5060">BUY pool: Top-BestBuyN ≥ TPBestBuy  |  SELL pool: Top-BestSellN ≥ TPBestSell</text>
+</g>
+
+<!-- Buy/Sell pool boxes -->
+<g class="flownode" data-id="buyside"
+   data-title="BUY Side Pool"
+   data-desc="Top BestBuyN ไม้ BUY กำไรสูงสุด (รวม M1+M2 BUY):
+• ไม่นับ Runner positions
+• ไม่แยก magic number
+• ปิดพร้อมกันเมื่อ sum ≥ TPBestBuy
+ตัวอย่าง BestBuyN=2, TPBestBuy=20:
+  ต้องมีไม้ BUY กำไรรวม 2 อันดับแรก ≥ $20"
+   data-params="BestBuyN,TPBestBuy">
+  <rect x="120" y="1205" width="280" height="34" rx="6" fill="#102030" stroke="#1e4060" stroke-width="1"/>
+  <text x="260" y="1220" text-anchor="middle" font-family="Courier New" font-size="9" fill="#4090d0">BUY Pool: Top-N BUY positions</text>
+  <text x="260" y="1233" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a6090">all magic · sum ≥ TPBestBuy → close pool</text>
+</g>
+
+<g class="flownode" data-id="sellside"
+   data-title="SELL Side Pool"
+   data-desc="Top BestSellN ไม้ SELL กำไรสูงสุด (รวม M3+M2 SELL):
+• ไม่นับ Runner positions
+• ไม่แยก magic number
+• ปิดพร้อมกันเมื่อ sum ≥ TPBestSell
+ตัวอย่าง BestSellN=2, TPBestSell=20:
+  ต้องมีไม้ SELL กำไรรวม 2 อันดับแรก ≥ $20"
+   data-params="BestSellN,TPBestSell">
+  <rect x="600" y="1205" width="280" height="34" rx="6" fill="#201008" stroke="#482018" stroke-width="1"/>
+  <text x="740" y="1220" text-anchor="middle" font-family="Courier New" font-size="9" fill="#d08040">SELL Pool: Top-N SELL positions</text>
+  <text x="740" y="1233" text-anchor="middle" font-family="Courier New" font-size="8" fill="#703020">all magic · sum ≥ TPBestSell → close pool</text>
+</g>
+
+<path d="M500,1183 L500,1198 L260,1198 L260,1205" stroke="#1a4060" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M500,1183 L500,1198 L740,1198 L740,1205" stroke="#482018" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<path d="M260,1239 L260,1270 L500,1270 L500,1280" stroke="#1a4060" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+<path d="M740,1239 L740,1270 L500,1270" stroke="#482018" stroke-width="1" stroke-dasharray="2,3" fill="none"/>
+<line x1="500" y1="1270" x2="500" y2="1278" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 7: RUNNER -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<g class="flownode" data-id="runner-tp"
+   data-title="ChkRunTP() — Runner Pool Take Profit"
+   data-desc="เงื่อนไขที่ต้องผ่านทั้งหมด:
+1. gNormalTPFired == false (ไม่ซ้อน normal TP)
+2. gRunPoolFull == true (pool ครบ RunKeepN แล้ว)
+3. กำไรรวม runner pool ≥ TPRun
+
+เมื่อ fire:
+1. AbsorbN: ปิดไม้เสียหนักสุด N ไม้ (จาก non-runner positions)
+2. ปิด runner pool ทั้งหมด
+3. gRunPoolFull = false → เริ่มจับ runner pool ใหม่"
+   data-params="TPRun,RunKeepN,AbsorbN">
+  <rect x="160" y="1282" width="680" height="50" rx="6" fill="#1a0c2a" stroke="#301848" stroke-width="1.5"/>
+  <text x="500" y="1304" text-anchor="middle" font-family="Courier New" font-size="10" fill="#9060d0" font-weight="bold">ChkRunTP()</text>
+  <text x="500" y="1319" text-anchor="middle" font-family="Courier New" font-size="8" fill="#503070">runner pool sum ≥ TPRun  AND  !gNormalTPFired  AND  pool full</text>
+</g>
+
+<!-- Runner pool diagram -->
+<g class="flownode" data-id="runner-pool-detail"
+   data-title="Runner Pool — UpdateRunners()"
+   data-desc="ทุก tick UpdateRunners():
+1. รวม positions กำไร &gt; 0 จาก M1+M2+M3
+2. Sort descending (กำไรมาก → น้อย)
+3. gRunTk[] = Top-RunKeepN tickets
+
+Pool State:
+• pool &lt; RunKeepN → gRunPoolFull = false → ไม่วาง BE
+• pool = RunKeepN → gRunPoolFull = true → วาง BE-SL ทุกตัว
+  BE-SL = entry + RunBEPts × point (ทิศ BUY)
+          entry - RunBEPts × point (ทิศ SELL)
+
+Runner ชน BE-SL → ออกอัตโนมัติ → pool ลดลง
+ระบบหา runner ใหม่แทนจนครบ N อีกครั้ง"
+   data-params="RunKeepN,RunBEPts,TPRun">
+  <rect x="60" y="1660" width="880" height="80" rx="6" fill="#1a0c2a" stroke="#301848" stroke-width="1.5"/>
+  <text x="500" y="1685" text-anchor="middle" font-family="Courier New" font-size="10" fill="#9060d0" font-weight="bold">UpdateRunners() — Runner Pool Logic</text>
+  <text x="500" y="1700" text-anchor="middle" font-family="Courier New" font-size="8" fill="#604090">Top-RunKeepN positions by profit (all magic) → apply BE-SL when pool full</text>
+  <text x="500" y="1715" text-anchor="middle" font-family="Courier New" font-size="8" fill="#503070">Runner ชน BE-SL → exit auto → รอ runner ใหม่แทน  |  TPRun fire → ปิดทั้ง pool + AbsorbN</text>
+</g>
+
+<!-- Runner states -->
+<g class="flownode" data-id="rpool-partial"
+   data-title="Pool ยังไม่ครบ (pool &lt; RunKeepN)"
+   data-desc="ยังหา runner ไม่ครบ:
+• ไม่วาง BE-SL ให้ positions ใดเลย
+• positions ในกลุ่มนี้เป็น grid ปกติ
+• รอจนกว่าจะมีกำไร positions ครบ N"
+   data-params="RunKeepN">
+  <rect x="120" y="1762" width="200" height="34" rx="6" fill="#150a20" stroke="#2a1540" stroke-width="1"/>
+  <text x="220" y="1778" text-anchor="middle" font-family="Courier New" font-size="9" fill="#7050b0">Pool partial</text>
+  <text x="220" y="1791" text-anchor="middle" font-family="Courier New" font-size="8" fill="#402860">no BE-SL · grid mode</text>
+</g>
+
+<g class="flownode" data-id="rpool-full"
+   data-title="Pool ครบ (pool = RunKeepN)"
+   data-desc="Pool ครบ RunKeepN:
+• วาง BE-SL ทุกตัวใน pool
+• BE-SL = entry ± RunBEPts × _Point
+• ถ้าเคยวางแล้ว (better = false) → ไม่ modify
+• Log: '[Runner] Pool ครบ N ไม้แล้ว'"
+   data-params="RunKeepN,RunBEPts">
+  <rect x="400" y="1762" width="200" height="34" rx="6" fill="#0a1a10" stroke="#154025" stroke-width="1"/>
+  <text x="500" y="1778" text-anchor="middle" font-family="Courier New" font-size="9" fill="#40c080">Pool FULL</text>
+  <text x="500" y="1791" text-anchor="middle" font-family="Courier New" font-size="8" fill="#206040">apply BE-SL all runners</text>
+</g>
+
+<g class="flownode" data-id="rpool-tp"
+   data-title="Runner TP Fire"
+   data-desc="กำไรรวม runner pool ≥ TPRun:
+1. ดึงไม้เสีย AbsorbN ไม้ (non-runner, ทุก magic)
+2. ปิด runner pool
+3. gRunPoolFull = false → เริ่มใหม่
+ถ้า gNormalTPFired = true → skip (ป้องกัน double fire)"
+   data-params="TPRun,AbsorbN">
+  <rect x="680" y="1762" width="200" height="34" rx="6" fill="#1a0818" stroke="#401028" stroke-width="1"/>
+  <text x="780" y="1778" text-anchor="middle" font-family="Courier New" font-size="9" fill="#d040a0">Runner TP FIRE</text>
+  <text x="780" y="1791" text-anchor="middle" font-family="Courier New" font-size="8" fill="#801060">pool + AbsorbN → close all</text>
+</g>
+
+<path d="M500,1740 L500,1756 L220,1756 L220,1762" stroke="#2a1848" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M500,1740 L500,1762" stroke="#2a1848" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M500,1740 L500,1756 L780,1756 L780,1762" stroke="#2a1848" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<!-- arrows section 7 to next -->
+<line x1="500" y1="1332" x2="500" y2="1350" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 8: EQUITY / DD -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<g class="flownode" data-id="equity-dd"
+   data-title="Equity & Drawdown Tracking"
+   data-desc="ทุก tick หลังจาก TP ทำงาน:
+• equity = AccountInfoDouble(ACCOUNT_EQUITY)
+• ถ้า equity &gt; gPeakEquity → update peak
+• DD% = (gPeakEquity - equity) / gPeakEquity × 100
+• ถ้า DD% &gt; gMaxDDPct → update max DD
+แสดงใน Dashboard: DD / MaxDD section"
+   data-params="">
+  <rect x="200" y="1900" width="600" height="50" rx="6" fill="#0c180c" stroke="#1a2c1a" stroke-width="1.5"/>
+  <text x="500" y="1922" text-anchor="middle" font-family="Courier New" font-size="10" fill="#50c070" font-weight="bold">Track Equity Peak &amp; Drawdown</text>
+  <text x="500" y="1937" text-anchor="middle" font-family="Courier New" font-size="8" fill="#305040">gPeakEquity | gMaxDDPct | DD% = (peak-eq)/peak×100</text>
+</g>
+
+<line x1="500" y1="1352" x2="500" y2="1380" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<g class="flownode" data-id="dashboard"
+   data-title="ShowDashboard() + ShowCalPanel()"
+   data-desc="อัพเดท panel บนหน้าจอ MT5:
+Dashboard แสดง:
+• Account: Balance, Equity, P&amp;L, Daily Lot
+• DD / MaxDD
+• Trigger Banner (Normal/Active/Cooldown)
+• M1/M2/M3 sections: PNL, lot, CGP, losers
+• TP Status: TotTP, PairTP progress bars
+• ADX direction, Spread
+
+Calendar Panel แสดง:
+• P&amp;L รายวันของเดือนนี้
+• Monthly summary"
+   data-params="ShowPanel,ShowCal,PanelX,PanelY">
+  <rect x="300" y="1383" width="400" height="44" rx="6" fill="#101018" stroke="#1a1a28" stroke-width="1.5"/>
+  <text x="500" y="1403" text-anchor="middle" font-family="Courier New" font-size="10" fill="#7080a8" font-weight="bold">ShowDashboard() + ShowCalPanel()</text>
+  <text x="500" y="1418" text-anchor="middle" font-family="Courier New" font-size="8" fill="#404060">update visual panel every tick</text>
+</g>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION 9: GRID LOT CALC -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<g class="flownode" data-id="gridlot"
+   data-title="GridLot() — คำนวณ Lot ตามทิศทาง"
+   data-desc="คำนวณ lot สำหรับแต่ละ magic:
+M1 (BUY grid):
+• priceDir == -1 (กราฟลง, BUY ต้านเทรน) → mult = LotMultDown1 (aggressive)
+• priceDir == +1 (กราฟขึ้น, BUY ตามเทรน) → mult = LotMultUp1 (conservative)
+• lot = Lot1 × mult^level (exponential)
+
+M3 (SELL grid):
+• priceDir == +1 (กราฟขึ้น, SELL ต้านเทรน) → mult = LotMultUp3 (aggressive)
+• priceDir == -1 (กราฟลง, SELL ตามเทรน) → mult = LotMultDown3 (conservative)
+• lot = Lot3 × mult^level
+
+M2: lot = Lot2 × LotMult2^level (ทิศเดียว)
+
+ผ่าน NLot() normalize ให้ถูกต้องตาม broker"
+   data-params="Lot1,Lot2,Lot3,LotMult2,LotMultDown1,LotMultUp1,LotMultUp3,LotMultDown3">
+  <rect x="60" y="2090" width="880" height="80" rx="6" fill="#101820" stroke="#182030" stroke-width="1.5"/>
+  <text x="500" y="2115" text-anchor="middle" font-family="Courier New" font-size="10" fill="#4080b0" font-weight="bold">GridLot(magic, level, priceDir)</text>
+  <text x="500" y="2132" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5060">M1: Lot1 × LotMultDown1^n (ลง) or LotMultUp1^n (ขึ้น)</text>
+  <text x="500" y="2148" text-anchor="middle" font-family="Courier New" font-size="8" fill="#2a5060">M3: Lot3 × LotMultUp3^n (ขึ้น) or LotMultDown3^n (ลง)   |   M2: Lot2 × LotMult2^n</text>
+</g>
+
+<!-- Level counter -->
+<g class="flownode" data-id="level-counter"
+   data-title="Level Counters — นับไม้แยกทิศ"
+   data-desc="M1 BUY counters:
+• gCntDown1: ไม้ M1 ที่เปิดตอนกราฟลง (ต้านเทรน)
+• gCntUp1: ไม้ M1 ที่เปิดตอนกราฟขึ้น (ตามเทรน)
+→ level = gCntDown1 ถ้า priceDir=-1
+→ level = gCntUp1 ถ้า priceDir=+1
+
+M3 SELL counters:
+• gCntUp3: ไม้ M3 ที่เปิดตอนกราฟขึ้น (ต้านเทรน)
+• gCntDown3: ไม้ M3 ที่เปิดตอนกราฟลง (ตามเทรน)
+→ level = gCntUp3 ถ้า priceDir=+1
+→ level = gCntDown3 ถ้า priceDir=-1
+
+Reset: ทุกครั้งที่ cnt==0 (ไม้หมด)"
+   data-params="LotMultDown1,LotMultUp1,LotMultUp3,LotMultDown3">
+  <rect x="120" y="2200" width="340" height="60" rx="6" fill="#0e1828" stroke="#162436" stroke-width="1"/>
+  <text x="290" y="2220" text-anchor="middle" font-family="Courier New" font-size="9" fill="#4080b0">M1: gCntDown1 / gCntUp1</text>
+  <text x="290" y="2234" text-anchor="middle" font-family="Courier New" font-size="9" fill="#c06030">M3: gCntUp3 / gCntDown3</text>
+  <text x="290" y="2248" text-anchor="middle" font-family="Courier New" font-size="8" fill="#304060">reset on cnt==0</text>
+</g>
+
+<g class="flownode" data-id="lot-example"
+   data-title="ตัวอย่าง Lot Scaling"
+   data-desc="ตัวอย่าง M1 กราฟลง (LotMultDown1=2.0, Lot1=0.01):
+ไม้ที่ 1: 0.01 × 2^0 = 0.01 lot
+ไม้ที่ 2: 0.01 × 2^1 = 0.02 lot
+ไม้ที่ 3: 0.01 × 2^2 = 0.04 lot
+ไม้ที่ 4: 0.01 × 2^3 = 0.08 lot
+ไม้ที่ 5: 0.01 × 2^4 = 0.16 lot
+
+M1 กราฟขึ้น (LotMultUp1=1.1):
+ไม้ที่ 1: 0.01 × 1.1^0 = 0.01 lot
+ไม้ที่ 2: 0.01 × 1.1^1 = 0.011 lot
+ไม้ที่ 3: 0.01 × 1.1^2 = 0.012 lot
+(conservative — lot ขึ้นช้า)"
+   data-params="Lot1,LotMultDown1,LotMultUp1">
+  <rect x="540" y="2200" width="380" height="60" rx="6" fill="#0e1828" stroke="#162436" stroke-width="1"/>
+  <text x="730" y="2220" text-anchor="middle" font-family="Courier New" font-size="9" fill="#4080b0">Lot = base × mult^level</text>
+  <text x="730" y="2234" text-anchor="middle" font-family="Courier New" font-size="8" fill="#304060">Down: 0.01→0.02→0.04→0.08... (mult=2.0)</text>
+  <text x="730" y="2248" text-anchor="middle" font-family="Courier New" font-size="8" fill="#304060">Up:   0.01→0.011→0.012...  (mult=1.1)</text>
+</g>
+
+<path d="M500,2170 L500,2190 L290,2190 L290,2200" stroke="#182030" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+<path d="M500,2170 L500,2190 L730,2190 L730,2200" stroke="#182030" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- END NODE -->
+<!-- ══════════════════════════════════════════════════════ -->
+
+<path d="M500,1950 L500,1960" stroke="#2a4070" stroke-width="1.5" fill="none"/>
+<path d="M500,1427 L500,1440 L500,1450" stroke="#2a4070" stroke-width="1.5" fill="none"/>
+<path d="M500,1795 L500,1850 L500,1890" stroke="#302050" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+
+<!-- link runner tp section -->
+<path d="M500,1332 L500,1620" stroke="#2a4070" stroke-width="1.5" fill="none"/>
+<path d="M500,1620 L500,1660" stroke="#302050" stroke-width="1" stroke-dasharray="2,3" fill="none" marker-end="url(#arr)"/>
+
+<!-- Final end box -->
+<g class="flownode" data-id="end"
+   data-title="End of OnTick()"
+   data-desc="OnTick สิ้นสุด รอ tick ถัดไป
+MT5 จะ call OnTick() อีกครั้งเมื่อ:
+• ราคา bid/ask เปลี่ยนแปลง
+• ความถี่ขึ้นอยู่กับ instrument และ session"
+   data-params="">
+  <rect x="430" y="1960" width="140" height="30" rx="15" fill="#0a0e1a" stroke="#1a2440" stroke-width="1.5"/>
+  <text x="500" y="1980" text-anchor="middle" font-family="Courier New" font-size="10" fill="#3050a0">End Tick</text>
+</g>
+<path d="M500,1950 L500,1960" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SECTION arrows connecting major sections -->
+<!-- ══════════════════════════════════════════════════════ -->
+<path d="M500,634 L500,660" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)" fill="none"/>
+<path d="M500,704 L500,720" stroke="#2a4070" stroke-width="1.5" fill="none"/>
+<path d="M500,1114 L500,1133" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)" fill="none"/>
+<path d="M500,1183 L500,1282" stroke="#302050" stroke-width="1" stroke-dasharray="3,2" fill="none"/>
+<path d="M500,1332 L500,1383" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)" fill="none"/>
+<path d="M500,1427 L500,1900" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arr)" fill="none"/>
+
+</svg>
+</div>
+</div>
+
+<script>
+// ── Info panel on hover/click ─────────────────────────
+const infoDefault = document.getElementById('info-default');
+const infoPanel   = document.getElementById('info-panel');
+const infoTitle   = document.getElementById('info-title');
+const infoDesc    = document.getElementById('info-desc');
+const infoParams  = document.getElementById('info-params');
+
+const PARAM_INFO = {
+  En1:           'เปิด/ปิด M1 BUY Grid',
+  En2:           'เปิด/ปิด M2 ADX/Assist',
+  En3:           'เปิด/ปิด M3 SELL Grid',
+  Lot1:          'Base lot M1 (ไม้แรกเสมอ)',
+  Lot2:          'Base lot M2',
+  Lot3:          'Base lot M3 (ไม้แรกเสมอ)',
+  LotMult2:      'Multiplier M2 (ทิศเดียว)',
+  LotMultDown1:  'M1 mult กราฟลง (aggressive, default 2.0)',
+  LotMultUp1:    'M1 mult กราฟขึ้น (conservative, default 1.1)',
+  LotMultUp3:    'M3 mult กราฟขึ้น (aggressive, default 2.0)',
+  LotMultDown3:  'M3 mult กราฟลง (conservative, default 1.1)',
+  GS1:           'Grid spacing M1 (points)',
+  GS2:           'Grid spacing M2 (points)',
+  GS3:           'Grid spacing M3 (points)',
+  MaxGrid1:      'จำนวนไม้สูงสุด M1',
+  MaxGrid2:      'จำนวนไม้สูงสุด M2',
+  MaxGrid3:      'จำนวนไม้สูงสุด M3',
+  LossTrig1:     'ขาดทุน M1 (USD) ที่ trigger lock',
+  LossTrig3:     'ขาดทุน M3 (USD) ที่ trigger lock',
+  TrigCoolSec:   'Cooldown หลัง unlock (วินาที)',
+  UseADX:        'เปิด/ปิด ADX filter',
+  ADXTF:         'Timeframe ADX (default H1)',
+  ADXPer:        'Period ADX (default 14)',
+  ADXMin:        'ADX ขั้นต่ำ (ต่ำกว่า = Flat/Idle)',
+  UseSepTP:      'เปิด Separate TP แยก magic',
+  TP1:           'Winners M1 target (USD)',
+  TP2:           'Winners M2 target (USD)',
+  TP3:           'Winners M3 target (USD)',
+  UsePairTP:     'เปิด Pair TP (2 magic รวมกัน)',
+  TPPair:        'Winners pair target (USD)',
+  UseTotTP:      'เปิด Total TP (M1+M2+M3)',
+  TPTot:         'Winners total target (USD)',
+  AbsorbN:       'ไม้เสียหนักสุด N ไม้ที่ดึงเข้า group (รวมทุก magic)',
+  AbsorbMinNet:  'Net ขั้นต่ำหลังหักเสีย (0=ไม่ติดลบ)',
+  BestBuyN:      'Top-N BUY กำไรสูงสุด (ข้ามทุก magic)',
+  TPBestBuy:     'เป้ากำไรรวม BUY pool (USD)',
+  BestSellN:     'Top-N SELL กำไรสูงสุด (ข้ามทุก magic)',
+  TPBestSell:    'เป้ากำไรรวม SELL pool (USD)',
+  RunKeepN:      'จำนวน runner ที่ต้องการ (รวมทุก magic)',
+  RunBEPts:      'Offset BE-SL เหนือ entry (points)',
+  TPRun:         'กำไรรวม runner pool ที่ปิด (USD)',
+  MaxSpread:     'Spread สูงสุดที่ยอมรับ (points)',
+  MaxDailyLot:   'Lot สะสมสูงสุดต่อวันต่อ magic (0=ปิด)',
+  ShowPanel:     'แสดง Dashboard panel',
+  ShowCal:       'แสดง Calendar panel',
+  PanelX:        'ตำแหน่ง panel แกน X',
+  PanelY:        'ตำแหน่ง panel แกน Y',
+  gTrigJustFired:'flag: ป้องกัน M2 เปิดทันทีหลัง trigger',
+  gNormalTPFired:'flag: ป้องกัน Runner TP ซ้อน Normal TP',
+};
+
+document.querySelectorAll('.flownode').forEach(g => {
+  const title  = g.dataset.title  || '';
+  const desc   = g.dataset.desc   || '';
+  const params = (g.dataset.params || '').split(',').filter(Boolean);
+
+  g.addEventListener('mouseenter', () => showInfo(title, desc, params));
+  g.addEventListener('click',      () => showInfo(title, desc, params));
+});
+
+function showInfo(title, desc, params) {
+  infoDefault.style.display = 'none';
+  infoPanel.style.display = 'block';
+  infoTitle.textContent = title;
+  infoDesc.textContent  = desc;
+  infoParams.innerHTML  = '';
+  params.forEach(p => {
+    const sp = document.createElement('span');
+    sp.className = 'param-tag';
+    const info = PARAM_INFO[p.trim()] || '';
+    sp.title = info;
+    sp.textContent = p.trim();
+    infoParams.appendChild(sp);
+  });
+}
+
+// reset on background click
+document.getElementById('flow-wrap').addEventListener('click', e => {
+  if(e.target.tagName === 'svg' || e.target.id === 'flow-wrap') {
+    infoDefault.style.display = 'block';
+    infoPanel.style.display   = 'none';
+  }
+});
+</script>
+</body>
+</html>
