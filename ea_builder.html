@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>MT5 EA Builder</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#07090f;font-family:'Courier New',monospace;color:#c0d0e8;min-height:100vh}
+
+/* ── TOP BAR ── */
+#topbar{
+  display:flex;align-items:center;gap:12px;
+  padding:9px 20px;background:#0a0d1a;
+  border-bottom:1px solid #1a2240;
+  position:sticky;top:0;z-index:100;
+}
+#topbar h1{font-size:13px;color:#ffc832;letter-spacing:2px}
+.tbtn{
+  padding:5px 14px;background:#1a2240;border:1px solid #2a3860;
+  color:#8ab0e8;font-size:10px;cursor:pointer;border-radius:4px;
+  font-family:inherit;transition:all .2s;margin-left:auto;
+}
+.tbtn:hover{background:#253060;color:#fff}
+.tbtn.green{border-color:#1a4828;color:#40d070;background:#0c2018}
+.tbtn.green:hover{background:#143020}
+.tbtn.orange{border-color:#5a3010;color:#e09040;background:#1a1008}
+.tbtn.orange:hover{background:#221508}
+
+/* ── LAYOUT ── */
+#app{display:flex;height:calc(100vh - 42px)}
+
+/* ── LEFT PANEL ── */
+#left{
+  width:360px;min-width:360px;
+  background:#090c18;border-right:1px solid #141e38;
+  overflow-y:auto;
+}
+.section{
+  border-bottom:1px solid #111a30;
+  padding:14px 16px;
+}
+.section-hdr{
+  display:flex;align-items:center;gap:8px;
+  cursor:pointer;user-select:none;
+  margin-bottom:0;
+}
+.section-hdr.open{margin-bottom:12px}
+.section-hdr h3{font-size:10px;color:#4a6a9a;letter-spacing:1.5px;flex:1}
+.section-hdr .arrow{font-size:9px;color:#2a4060;transition:transform .2s}
+.section-hdr.open .arrow{transform:rotate(90deg)}
+.section-body{display:none}
+.section-body.open{display:block}
+
+/* ── FORM FIELDS ── */
+.field{margin-bottom:10px}
+.field label{
+  display:block;font-size:9px;color:#4a6080;
+  margin-bottom:3px;letter-spacing:.5px;
+}
+.field input,.field select,.field textarea{
+  width:100%;padding:6px 8px;
+  background:#07090f;border:1px solid #1a2440;
+  color:#c0d0e8;font-family:inherit;font-size:10px;
+  border-radius:4px;outline:none;transition:border-color .2s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:#2a5080}
+.field textarea{resize:vertical;min-height:50px}
+.row{display:flex;gap:8px}
+.row .field{flex:1}
+
+/* Toggle switch */
+.toggle-row{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:8px;
+}
+.toggle-row label{font-size:9px;color:#4a6080}
+.toggle{position:relative;width:34px;height:18px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.slider{
+  position:absolute;inset:0;background:#0e1828;
+  border:1px solid #1a2840;border-radius:9px;cursor:pointer;
+  transition:.2s;
+}
+.slider:before{
+  content:'';position:absolute;
+  width:12px;height:12px;left:2px;top:2px;
+  background:#2a3860;border-radius:50%;transition:.2s;
+}
+input:checked+.slider{background:#0e2818;border-color:#1a4828}
+input:checked+.slider:before{transform:translateX(16px);background:#40d070}
+
+/* Strategy card */
+.strat-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.strat-card{
+  padding:8px;background:#0a0e1c;border:1px solid #161e38;
+  border-radius:6px;cursor:pointer;transition:all .2s;text-align:center;
+}
+.strat-card:hover{border-color:#2a3a70;background:#0c1228}
+.strat-card.active{border-color:#3060a8;background:#0e1838;
+  box-shadow:0 0 8px rgba(48,96,168,.3)}
+.strat-card .si{font-size:18px;margin-bottom:4px}
+.strat-card .sn{font-size:9px;color:#6080b0;letter-spacing:.5px}
+.strat-card .sd{font-size:8px;color:#3a5070;margin-top:2px}
+
+/* ── CODE PANEL ── */
+#right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+#code-tabs{
+  display:flex;gap:0;
+  border-bottom:1px solid #1a2440;
+  background:#080b16;
+}
+.tab{
+  padding:8px 16px;font-size:9px;letter-spacing:1px;
+  cursor:pointer;color:#3a5070;border-bottom:2px solid transparent;
+  transition:all .2s;
+}
+.tab:hover{color:#6080a0}
+.tab.active{color:#6090d0;border-bottom-color:#3060a0}
+
+#code-wrap{
+  flex:1;overflow:auto;
+  background:#050709;
+  position:relative;
+}
+#code-output{
+  font-family:'Courier New',monospace;font-size:11px;
+  color:#c0d8f0;padding:20px;
+  white-space:pre;line-height:1.7;
+  min-height:100%;
+}
+
+/* syntax highlight classes */
+.kw{color:#6090e8}
+.cm{color:#3a5070;font-style:italic}
+.str{color:#80c080}
+.num{color:#e0a840}
+.fn{color:#c080ff}
+.pp{color:#e06060}
+.tp{color:#60d0d0}
+
+/* ── VALIDATE badge ── */
+#validate-bar{
+  padding:7px 16px;background:#080b14;border-top:1px solid #141e30;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+}
+.badge{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 8px;border-radius:3px;font-size:9px;
+}
+.badge.ok{background:#0a2012;border:1px solid #154028;color:#40c060}
+.badge.err{background:#200808;border:1px solid #501010;color:#e05050}
+.badge.warn{background:#201408;border:1px solid #503010;color:#d09040}
+
+/* ── Quick guide ── */
+#guide{
+  position:fixed;right:0;top:42px;bottom:0;width:0;
+  background:#090c18;border-left:1px solid #141e38;
+  overflow:hidden;transition:width .3s;z-index:50;
+}
+#guide.open{width:260px}
+#guide-inner{padding:16px;width:260px}
+#guide h3{font-size:10px;color:#4a6a9a;letter-spacing:1px;margin-bottom:12px}
+.guide-block{
+  background:#0a0e1c;border:1px solid #161e38;border-radius:6px;
+  padding:10px;margin-bottom:8px;
+}
+.guide-block h4{font-size:9px;color:#5080b0;margin-bottom:5px}
+.guide-block p{font-size:8px;color:#3a5070;line-height:1.7}
+.guide-block code{color:#60c080;font-size:8px}
+</style>
+</head>
+<body>
+
+<!-- ── TOP BAR ── -->
+<div id="topbar">
+  <h1>⚡ MT5 EA BUILDER</h1>
+  <span style="font-size:9px;color:#2a4060" id="strat-name-hdr">—</span>
+  <button class="tbtn green" onclick="generateCode()">▶ Generate Code</button>
+  <button class="tbtn orange" onclick="copyCode()">⎘ Copy MQL5</button>
+  <button class="tbtn" onclick="downloadCode()">↓ Download .mq5</button>
+  <button class="tbtn" id="guide-btn" onclick="toggleGuide()">? Guide</button>
+</div>
+
+<div id="app">
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- LEFT PANEL -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div id="left">
+
+  <!-- EA INFO -->
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSec(this)">
+      <h3>📋 EA INFO</h3><span class="arrow">▶</span>
+    </div>
+    <div class="section-body open">
+      <div class="field"><label>EA NAME</label>
+        <input id="ea-name" value="MyEA_v1" oninput="generateCode()">
+      </div>
+      <div class="row">
+        <div class="field"><label>VERSION</label>
+          <input id="ea-ver" value="1.00" oninput="generateCode()">
+        </div>
+        <div class="field"><label>MAGIC NUMBER</label>
+          <input id="ea-magic" type="number" value="12345" oninput="generateCode()">
+        </div>
+      </div>
+      <div class="field"><label>AUTHOR / COPYRIGHT</label>
+        <input id="ea-author" value="My Name" oninput="generateCode()">
+      </div>
+      <div class="field"><label>DESCRIPTION</label>
+        <input id="ea-desc" value="My Expert Advisor" oninput="generateCode()">
+      </div>
+    </div>
+  </div>
+
+  <!-- STRATEGY -->
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSec(this)">
+      <h3>🎯 STRATEGY</h3><span class="arrow">▶</span>
+    </div>
+    <div class="section-body open">
+      <div class="strat-grid">
+        <div class="strat-card active" onclick="setStrat('ema',this)">
+          <div class="si">📈</div>
+          <div class="sn">EMA CROSS</div>
+          <div class="sd">EMA Fast/Slow</div>
+        </div>
+        <div class="strat-card" onclick="setStrat('rsi',this)">
+          <div class="si">📊</div>
+          <div class="sn">RSI OB/OS</div>
+          <div class="sd">Overbought/Sold</div>
+        </div>
+        <div class="strat-card" onclick="setStrat('bb',this)">
+          <div class="si">〰️</div>
+          <div class="sn">BOLLINGER</div>
+          <div class="sd">Band breakout</div>
+        </div>
+        <div class="strat-card" onclick="setStrat('macd',this)">
+          <div class="si">🔀</div>
+          <div class="sn">MACD</div>
+          <div class="sd">Signal cross</div>
+        </div>
+        <div class="strat-card" onclick="setStrat('grid',this)">
+          <div class="si">🔲</div>
+          <div class="sn">GRID</div>
+          <div class="sd">Grid trading</div>
+        </div>
+        <div class="strat-card" onclick="setStrat('scalp',this)">
+          <div class="si">⚡</div>
+          <div class="sn">SCALPING</div>
+          <div class="sd">Stoch + MA</div>
+        </div>
+      </div>
+      <div id="strat-params" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- LOT / RISK -->
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSec(this)">
+      <h3>💰 LOT &amp; RISK</h3><span class="arrow">▶</span>
+    </div>
+    <div class="section-body open">
+      <div class="field"><label>LOT TYPE</label>
+        <select id="lot-type" onchange="generateCode()">
+          <option value="fixed">Fixed Lot</option>
+          <option value="pct">% of Balance</option>
+          <option value="risk">Risk % per Trade</option>
+        </select>
+      </div>
+      <div class="row">
+        <div class="field"><label>LOT SIZE / %</label>
+          <input id="lot-val" type="number" value="0.01" step="0.01" oninput="generateCode()">
+        </div>
+        <div class="field"><label>MAX LOT</label>
+          <input id="lot-max" type="number" value="1.0" step="0.01" oninput="generateCode()">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>STOP LOSS (pts)</label>
+          <input id="sl-pts" type="number" value="200" oninput="generateCode()">
+        </div>
+        <div class="field"><label>TAKE PROFIT (pts)</label>
+          <input id="tp-pts" type="number" value="400" oninput="generateCode()">
+        </div>
+      </div>
+      <div class="toggle-row">
+        <label>USE TRAILING STOP</label>
+        <label class="toggle"><input type="checkbox" id="use-trail" onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div id="trail-opts" style="display:none">
+        <div class="row">
+          <div class="field"><label>TRAIL START (pts)</label>
+            <input id="trail-start" type="number" value="100" oninput="generateCode()">
+          </div>
+          <div class="field"><label>TRAIL STEP (pts)</label>
+            <input id="trail-step" type="number" value="50" oninput="generateCode()">
+          </div>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <label>USE BREAKEVEN</label>
+        <label class="toggle"><input type="checkbox" id="use-be" onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div id="be-opts" style="display:none">
+        <div class="row">
+          <div class="field"><label>BE TRIGGER (pts)</label>
+            <input id="be-trig" type="number" value="100" oninput="generateCode()">
+          </div>
+          <div class="field"><label>BE OFFSET (pts)</label>
+            <input id="be-offset" type="number" value="5" oninput="generateCode()">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="section">
+    <div class="section-hdr" onclick="toggleSec(this)">
+      <h3>🔍 FILTERS</h3><span class="arrow">▶</span>
+    </div>
+    <div class="section-body">
+      <div class="toggle-row">
+        <label>MAX SPREAD FILTER</label>
+        <label class="toggle"><input type="checkbox" id="use-spread" checked onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div class="field"><label>MAX SPREAD (pts)</label>
+        <input id="spread-max" type="number" value="50" oninput="generateCode()">
+      </div>
+      <div class="toggle-row">
+        <label>TRADING HOURS</label>
+        <label class="toggle"><input type="checkbox" id="use-hours" onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div id="hours-opts" style="display:none">
+        <div class="row">
+          <div class="field"><label>START HOUR</label>
+            <input id="hr-start" type="number" value="8" min="0" max="23" oninput="generateCode()">
+          </div>
+          <div class="field"><label>END HOUR</label>
+            <input id="hr-end" type="number" value="20" min="0" max="23" oninput="generateCode()">
+          </div>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <label>MAX DAILY LOSS ($)</label>
+        <label class="toggle"><input type="checkbox" id="use-ddloss" onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div id="ddloss-opts" style="display:none">
+        <div class="field"><label>DAILY LOSS LIMIT ($)</label>
+          <input id="ddloss-val" type="number" value="100" oninput="generateCode()">
+        </div>
+      </div>
+      <div class="toggle-row">
+        <label>MAX OPEN POSITIONS</label>
+        <label class="toggle"><input type="checkbox" id="use-maxpos" onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div id="maxpos-opts" style="display:none">
+        <div class="field"><label>MAX POSITIONS</label>
+          <input id="maxpos-val" type="number" value="5" oninput="generateCode()">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPTIONS -->
+  <div class="section">
+    <div class="section-hdr" onclick="toggleSec(this)">
+      <h3>⚙️ OPTIONS</h3><span class="arrow">▶</span>
+    </div>
+    <div class="section-body">
+      <div class="field"><label>TIMEFRAME</label>
+        <select id="tf" onchange="generateCode()">
+          <option value="PERIOD_M1">M1</option>
+          <option value="PERIOD_M5">M5</option>
+          <option value="PERIOD_M15" selected>M15</option>
+          <option value="PERIOD_M30">M30</option>
+          <option value="PERIOD_H1">H1</option>
+          <option value="PERIOD_H4">H4</option>
+          <option value="PERIOD_D1">D1</option>
+        </select>
+      </div>
+      <div class="field"><label>DEVIATION (slippage pts)</label>
+        <input id="deviation" type="number" value="30" oninput="generateCode()">
+      </div>
+      <div class="toggle-row">
+        <label>ALLOW BOTH DIRECTIONS</label>
+        <label class="toggle"><input type="checkbox" id="both-dir" onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>CLOSE ON OPPOSITE SIGNAL</label>
+        <label class="toggle"><input type="checkbox" id="close-opp" checked onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>ONE TRADE PER BAR</label>
+        <label class="toggle"><input type="checkbox" id="one-per-bar" checked onchange="generateCode()">
+          <span class="slider"></span></label>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end left -->
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- RIGHT: CODE -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div id="right">
+  <div id="code-tabs">
+    <div class="tab active" onclick="setTab('code',this)">MQL5 CODE</div>
+    <div class="tab" onclick="setTab('info',this)">PARAMETER LIST</div>
+    <div class="tab" onclick="setTab('logic',this)">LOGIC SUMMARY</div>
+  </div>
+  <div id="code-wrap">
+    <div id="code-output"></div>
+  </div>
+  <div id="validate-bar" id="validate-bar">
+    <span style="font-size:9px;color:#2a4060">VALIDATION:</span>
+    <span id="v-sl" class="badge ok">✓ SL set</span>
+    <span id="v-tp" class="badge ok">✓ TP set</span>
+    <span id="v-magic" class="badge ok">✓ Magic OK</span>
+    <span id="v-lot" class="badge ok">✓ Lot valid</span>
+    <span id="v-err" class="badge" style="display:none"></span>
+  </div>
+</div>
+
+</div><!-- end app -->
+
+<!-- ── GUIDE ── -->
+<div id="guide">
+  <div id="guide-inner">
+    <h3>📖 QUICK GUIDE</h3>
+    <div class="guide-block">
+      <h4>1. เลือก Strategy</h4>
+      <p>เลือกกลยุทธ์ที่ต้องการ จากนั้นปรับ parameters ของ indicator</p>
+    </div>
+    <div class="guide-block">
+      <h4>2. ตั้งค่า Lot & Risk</h4>
+      <p>Fixed Lot = lot คงที่<br>% Balance = คำนวณจาก balance<br>Risk % = คำนวณจาก SL</p>
+    </div>
+    <div class="guide-block">
+      <h4>3. ตั้งค่า SL/TP</h4>
+      <p>SL และ TP เป็น <code>points</code><br>1 pip XAUUSD = 100 points<br>1 pip EURUSD = 10 points</p>
+    </div>
+    <div class="guide-block">
+      <h4>4. Generate → Copy</h4>
+      <p>กด Generate Code แล้ว Copy MQL5 นำไป paste ใน MetaEditor แล้ว Compile</p>
+    </div>
+    <div class="guide-block">
+      <h4>⚠️ หมายเหตุ</h4>
+      <p>โค้ดที่ generate เป็น template พื้นฐาน ควร test ใน Strategy Tester ก่อน live เสมอ</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let currentStrat = 'ema';
+let currentTab   = 'code';
+
+// ── Strategy param definitions ──
+const STRATS = {
+  ema: {
+    name: 'EMA Cross',
+    params: [
+      {id:'ema-fast', label:'EMA FAST PERIOD', type:'number', val:9},
+      {id:'ema-slow', label:'EMA SLOW PERIOD', type:'number', val:21},
+      {id:'ema-tf',   label:'EMA TIMEFRAME',   type:'select',
+       opts:['PERIOD_CURRENT','PERIOD_M15','PERIOD_H1','PERIOD_H4'], val:'PERIOD_CURRENT'},
+    ]
+  },
+  rsi: {
+    name: 'RSI OB/OS',
+    params: [
+      {id:'rsi-per',  label:'RSI PERIOD',      type:'number', val:14},
+      {id:'rsi-ob',   label:'OVERBOUGHT LEVEL', type:'number', val:70},
+      {id:'rsi-os',   label:'OVERSOLD LEVEL',   type:'number', val:30},
+      {id:'rsi-tf',   label:'RSI TIMEFRAME',    type:'select',
+       opts:['PERIOD_CURRENT','PERIOD_M15','PERIOD_H1','PERIOD_H4'], val:'PERIOD_CURRENT'},
+    ]
+  },
+  bb: {
+    name: 'Bollinger Bands',
+    params: [
+      {id:'bb-per',  label:'BB PERIOD',     type:'number', val:20},
+      {id:'bb-dev',  label:'BB DEVIATION',  type:'number', val:2, step:'0.1'},
+      {id:'bb-tf',   label:'BB TIMEFRAME',  type:'select',
+       opts:['PERIOD_CURRENT','PERIOD_M15','PERIOD_H1','PERIOD_H4'], val:'PERIOD_CURRENT'},
+    ]
+  },
+  macd: {
+    name: 'MACD Signal',
+    params: [
+      {id:'macd-fast',   label:'MACD FAST',    type:'number', val:12},
+      {id:'macd-slow',   label:'MACD SLOW',    type:'number', val:26},
+      {id:'macd-signal', label:'MACD SIGNAL',  type:'number', val:9},
+      {id:'macd-tf',     label:'TIMEFRAME',    type:'select',
+       opts:['PERIOD_CURRENT','PERIOD_M15','PERIOD_H1','PERIOD_H4'], val:'PERIOD_CURRENT'},
+    ]
+  },
+  grid: {
+    name: 'Grid Trading',
+    params: [
+      {id:'grid-step',  label:'GRID STEP (pts)',    type:'number', val:200},
+      {id:'grid-max',   label:'MAX GRID ORDERS',    type:'number', val:10},
+      {id:'grid-mult',  label:'LOT MULTIPLIER',     type:'number', val:1.5, step:'0.1'},
+      {id:'grid-tp',    label:'GRID TP ($)',         type:'number', val:20},
+    ]
+  },
+  scalp: {
+    name: 'Scalping (Stoch+MA)',
+    params: [
+      {id:'sc-ma',    label:'MA PERIOD',      type:'number', val:50},
+      {id:'sc-kper',  label:'STOCH %K',       type:'number', val:5},
+      {id:'sc-dper',  label:'STOCH %D',       type:'number', val:3},
+      {id:'sc-slow',  label:'STOCH SLOW',     type:'number', val:3},
+      {id:'sc-ob',    label:'STOCH OB',       type:'number', val:80},
+      {id:'sc-os',    label:'STOCH OS',       type:'number', val:20},
+    ]
+  },
+};
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  renderStratParams('ema');
+  toggleOpts();
+  generateCode();
+  document.getElementById('use-trail').addEventListener('change', toggleOpts);
+  document.getElementById('use-be').addEventListener('change', toggleOpts);
+  document.getElementById('use-hours').addEventListener('change', toggleOpts);
+  document.getElementById('use-ddloss').addEventListener('change', toggleOpts);
+  document.getElementById('use-maxpos').addEventListener('change', toggleOpts);
+});
+
+function toggleOpts() {
+  document.getElementById('trail-opts').style.display =
+    document.getElementById('use-trail').checked ? 'block' : 'none';
+  document.getElementById('be-opts').style.display =
+    document.getElementById('use-be').checked ? 'block' : 'none';
+  document.getElementById('hours-opts').style.display =
+    document.getElementById('use-hours').checked ? 'block' : 'none';
+  document.getElementById('ddloss-opts').style.display =
+    document.getElementById('use-ddloss').checked ? 'block' : 'none';
+  document.getElementById('maxpos-opts').style.display =
+    document.getElementById('use-maxpos').checked ? 'block' : 'none';
+  generateCode();
+}
+
+// ═══════════════════════════════════════════
+// SECTION TOGGLE
+// ═══════════════════════════════════════════
+function toggleSec(hdr) {
+  hdr.classList.toggle('open');
+  hdr.nextElementSibling.classList.toggle('open');
+}
+
+// ═══════════════════════════════════════════
+// STRATEGY
+// ═══════════════════════════════════════════
+function setStrat(id, el) {
+  document.querySelectorAll('.strat-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  currentStrat = id;
+  renderStratParams(id);
+  generateCode();
+}
+
+function renderStratParams(id) {
+  const s = STRATS[id];
+  const wrap = document.getElementById('strat-params');
+  wrap.innerHTML = '';
+  s.params.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'field';
+    if(p.type === 'select') {
+      div.innerHTML = `<label>${p.label}</label>
+        <select id="${p.id}" onchange="generateCode()">
+          ${p.opts.map(o=>`<option value="${o}"${o===p.val?' selected':''}>${o}</option>`).join('')}
+        </select>`;
+    } else {
+      div.innerHTML = `<label>${p.label}</label>
+        <input type="number" id="${p.id}" value="${p.val}" step="${p.step||1}" oninput="generateCode()">`;
+    }
+    wrap.appendChild(div);
+  });
+  document.getElementById('strat-name-hdr').textContent = '[ ' + s.name.toUpperCase() + ' ]';
+}
+
+function gv(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+function gc(id) {
+  const el = document.getElementById(id);
+  return el ? el.checked : false;
+}
+
+// ═══════════════════════════════════════════
+// CODE GENERATOR
+// ═══════════════════════════════════════════
+function generateCode() {
+  const code = buildCode();
+  if(currentTab === 'code') renderCode(code);
+  else if(currentTab === 'info') renderParamList();
+  else renderLogicSummary();
+  validateCode();
+}
+
+function buildCode() {
+  const name    = gv('ea-name')   || 'MyEA';
+  const ver     = gv('ea-ver')    || '1.00';
+  const magic   = gv('ea-magic')  || '12345';
+  const author  = gv('ea-author') || 'Author';
+  const desc    = gv('ea-desc')   || 'EA Description';
+  const slPts   = gv('sl-pts')    || '200';
+  const tpPts   = gv('tp-pts')    || '400';
+  const lotType = gv('lot-type');
+  const lotVal  = gv('lot-val')   || '0.01';
+  const lotMax  = gv('lot-max')   || '1.0';
+  const dev     = gv('deviation') || '30';
+  const tf      = gv('tf')        || 'PERIOD_M15';
+
+  const useTrail  = gc('use-trail');
+  const useBE     = gc('use-be');
+  const useSpread = gc('use-spread');
+  const useHours  = gc('use-hours');
+  const useDDLoss = gc('use-ddloss');
+  const useMaxPos = gc('use-maxpos');
+  const bothDir   = gc('both-dir');
+  const closeOpp  = gc('close-opp');
+  const onePerBar = gc('one-per-bar');
+
+  const trailStart = gv('trail-start') || '100';
+  const trailStep  = gv('trail-step')  || '50';
+  const beTrig     = gv('be-trig')     || '100';
+  const beOffset   = gv('be-offset')   || '5';
+  const spreadMax  = gv('spread-max')  || '50';
+  const hrStart    = gv('hr-start')    || '8';
+  const hrEnd      = gv('hr-end')      || '20';
+  const ddLossVal  = gv('ddloss-val')  || '100';
+  const maxPosVal  = gv('maxpos-val')  || '5';
+
+  // ── Indicator-specific includes ──
+  let indInputs = '', indGlobals = '', indInit = '', indDeinit = '', indSignal = '';
+
+  if(currentStrat === 'ema') {
+    const fast = gv('ema-fast')||'9', slow = gv('ema-slow')||'21', etf = gv('ema-tf')||'PERIOD_CURRENT';
+    indInputs = `input int    EMA_Fast      = ${fast};
+input int    EMA_Slow      = ${slow};
+input ENUM_TIMEFRAMES EMA_TF = ${etf};`;
+    indGlobals = `int hEMAFast = INVALID_HANDLE;
+int hEMASlow = INVALID_HANDLE;`;
+    indInit = `   hEMAFast = iMA(_Symbol, EMA_TF, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE);
+   hEMASlow = iMA(_Symbol, EMA_TF, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE);
+   if(hEMAFast == INVALID_HANDLE || hEMASlow == INVALID_HANDLE) {
+      Print("EMA handle error"); return INIT_FAILED;
+   }`;
+    indDeinit = `   if(hEMAFast != INVALID_HANDLE) IndicatorRelease(hEMAFast);
+   if(hEMASlow != INVALID_HANDLE) IndicatorRelease(hEMASlow);`;
+    indSignal = `   double fast0[2], slow0[2];
+   ArraySetAsSeries(fast0, true); ArraySetAsSeries(slow0, true);
+   if(CopyBuffer(hEMAFast,0,0,2,fast0)<2 || CopyBuffer(hEMASlow,0,0,2,slow0)<2) return;
+   bool buySignal  = (fast0[1] <= slow0[1]) && (fast0[0] > slow0[0]);
+   bool sellSignal = (fast0[1] >= slow0[1]) && (fast0[0] < slow0[0]);`;
+
+  } else if(currentStrat === 'rsi') {
+    const per = gv('rsi-per')||'14', ob = gv('rsi-ob')||'70', os = gv('rsi-os')||'30', rtf = gv('rsi-tf')||'PERIOD_CURRENT';
+    indInputs = `input int    RSI_Period    = ${per};
+input double RSI_OB        = ${ob};
+input double RSI_OS        = ${os};
+input ENUM_TIMEFRAMES RSI_TF = ${rtf};`;
+    indGlobals = `int hRSI = INVALID_HANDLE;`;
+    indInit    = `   hRSI = iRSI(_Symbol, RSI_TF, RSI_Period, PRICE_CLOSE);
+   if(hRSI == INVALID_HANDLE) { Print("RSI handle error"); return INIT_FAILED; }`;
+    indDeinit  = `   if(hRSI != INVALID_HANDLE) IndicatorRelease(hRSI);`;
+    indSignal  = `   double rsi[2]; ArraySetAsSeries(rsi, true);
+   if(CopyBuffer(hRSI,0,0,2,rsi)<2) return;
+   bool buySignal  = (rsi[1] <= RSI_OS) && (rsi[0] > RSI_OS);
+   bool sellSignal = (rsi[1] >= RSI_OB) && (rsi[0] < RSI_OB);`;
+
+  } else if(currentStrat === 'bb') {
+    const per = gv('bb-per')||'20', dev2 = gv('bb-dev')||'2', bbtf = gv('bb-tf')||'PERIOD_CURRENT';
+    indInputs = `input int    BB_Period     = ${per};
+input double BB_Deviation  = ${dev2};
+input ENUM_TIMEFRAMES BB_TF = ${bbtf};`;
+    indGlobals = `int hBB = INVALID_HANDLE;`;
+    indInit    = `   hBB = iBands(_Symbol, BB_TF, BB_Period, 0, BB_Deviation, PRICE_CLOSE);
+   if(hBB == INVALID_HANDLE) { Print("BB handle error"); return INIT_FAILED; }`;
+    indDeinit  = `   if(hBB != INVALID_HANDLE) IndicatorRelease(hBB);`;
+    indSignal  = `   double bbMid[1], bbUp[1], bbLow[1];
+   ArraySetAsSeries(bbMid,true); ArraySetAsSeries(bbUp,true); ArraySetAsSeries(bbLow,true);
+   if(CopyBuffer(hBB,0,1,1,bbMid)<1 || CopyBuffer(hBB,1,1,1,bbUp)<1 || CopyBuffer(hBB,2,1,1,bbLow)<1) return;
+   double closePrice = iClose(_Symbol,BB_TF,1);
+   bool buySignal  = (closePrice < bbLow[0]);
+   bool sellSignal = (closePrice > bbUp[0]);`;
+
+  } else if(currentStrat === 'macd') {
+    const fast = gv('macd-fast')||'12', slow = gv('macd-slow')||'26', sig = gv('macd-signal')||'9', mtf = gv('macd-tf')||'PERIOD_CURRENT';
+    indInputs = `input int    MACD_Fast     = ${fast};
+input int    MACD_Slow     = ${slow};
+input int    MACD_Signal   = ${sig};
+input ENUM_TIMEFRAMES MACD_TF = ${mtf};`;
+    indGlobals = `int hMACD = INVALID_HANDLE;`;
+    indInit    = `   hMACD = iMACD(_Symbol, MACD_TF, MACD_Fast, MACD_Slow, MACD_Signal, PRICE_CLOSE);
+   if(hMACD == INVALID_HANDLE) { Print("MACD handle error"); return INIT_FAILED; }`;
+    indDeinit  = `   if(hMACD != INVALID_HANDLE) IndicatorRelease(hMACD);`;
+    indSignal  = `   double macd[2], signal[2];
+   ArraySetAsSeries(macd,true); ArraySetAsSeries(signal,true);
+   if(CopyBuffer(hMACD,0,0,2,macd)<2 || CopyBuffer(hMACD,1,0,2,signal)<2) return;
+   bool buySignal  = (macd[1] <= signal[1]) && (macd[0] > signal[0]);
+   bool sellSignal = (macd[1] >= signal[1]) && (macd[0] < signal[0]);`;
+
+  } else if(currentStrat === 'grid') {
+    const step = gv('grid-step')||'200', maxG = gv('grid-max')||'10',
+          mult = gv('grid-mult')||'1.5', gtp = gv('grid-tp')||'20';
+    indInputs = `input int    Grid_Step     = ${step};    // Grid step (points)
+input int    Grid_MaxOrders = ${maxG};   // Max grid orders
+input double Grid_Multiplier= ${mult};   // Lot multiplier per level
+input double Grid_TP_USD    = ${gtp};    // Take profit (USD)`;
+    indGlobals = `double gLastGridPrice = 0;`;
+    indInit    = `   // Grid: restore last price from existing positions
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      if(PositionGetSymbol(i)==_Symbol && (int)PositionGetInteger(POSITION_MAGIC)==MagicNumber)
+         gLastGridPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   }`;
+    indDeinit  = '';
+    indSignal  = `   // Grid signal: always place if price moved enough
+   int cntBuy = CountPositions(POSITION_TYPE_BUY);
+   int cntSell= CountPositions(POSITION_TYPE_SELL);
+   double ask = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   bool buySignal  = (cntBuy  < Grid_MaxOrders) && (gLastGridPrice==0 || ask < gLastGridPrice - Grid_Step*_Point);
+   bool sellSignal = (cntSell < Grid_MaxOrders) && (gLastGridPrice==0 || bid > gLastGridPrice + Grid_Step*_Point);
+   // Grid TP: close all when total profit >= Grid_TP_USD
+   double totalPnl = 0;
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      totalPnl += PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+   }
+   if(totalPnl >= Grid_TP_USD) { CloseAllPositions(); return; }`;
+
+  } else if(currentStrat === 'scalp') {
+    const maPer = gv('sc-ma')||'50', kPer = gv('sc-kper')||'5',
+          dPer = gv('sc-dper')||'3', slow2 = gv('sc-slow')||'3',
+          scob = gv('sc-ob')||'80', scos = gv('sc-os')||'20';
+    indInputs = `input int    MA_Period     = ${maPer};
+input int    Stoch_K       = ${kPer};
+input int    Stoch_D       = ${dPer};
+input int    Stoch_Slow    = ${slow2};
+input double Stoch_OB      = ${scob};
+input double Stoch_OS      = ${scos};`;
+    indGlobals = `int hMA = INVALID_HANDLE;
+int hStoch = INVALID_HANDLE;`;
+    indInit    = `   hMA    = iMA(_Symbol, _Period, MA_Period, 0, MODE_SMA, PRICE_CLOSE);
+   hStoch = iStochastic(_Symbol, _Period, Stoch_K, Stoch_D, Stoch_Slow, MODE_SMA, STO_LOWHIGH);
+   if(hMA==INVALID_HANDLE || hStoch==INVALID_HANDLE) { Print("Handle error"); return INIT_FAILED; }`;
+    indDeinit  = `   if(hMA    != INVALID_HANDLE) IndicatorRelease(hMA);
+   if(hStoch != INVALID_HANDLE) IndicatorRelease(hStoch);`;
+    indSignal  = `   double ma[1]; ArraySetAsSeries(ma,true);
+   double kBuf[2], dBuf[2]; ArraySetAsSeries(kBuf,true); ArraySetAsSeries(dBuf,true);
+   if(CopyBuffer(hMA,0,1,1,ma)<1) return;
+   if(CopyBuffer(hStoch,0,0,2,kBuf)<2 || CopyBuffer(hStoch,1,0,2,dBuf)<2) return;
+   double price = iClose(_Symbol,_Period,1);
+   bool buySignal  = (price > ma[0]) && (kBuf[1]<=Stoch_OS) && (kBuf[0]>dBuf[0]);
+   bool sellSignal = (price < ma[0]) && (kBuf[1]>=Stoch_OB) && (kBuf[0]<dBuf[0]);`;
+  }
+
+  // ── Lot calculation ──
+  let lotCalc = '';
+  if(lotType === 'fixed') {
+    lotCalc = `double CalcLot() { return NormalizeLot(Lot_Size); }`;
+  } else if(lotType === 'pct') {
+    lotCalc = `double CalcLot() {
+   double bal  = AccountInfoDouble(ACCOUNT_BALANCE);
+   double lot  = NormalizeLot(bal * Lot_Size / 100.0 / 1000.0);
+   return MathMin(lot, Lot_Max);
+}`;
+  } else {
+    lotCalc = `double CalcLot() {
+   double bal  = AccountInfoDouble(ACCOUNT_BALANCE);
+   double risk = bal * Lot_Size / 100.0;
+   double tickVal = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSz  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tickVal<=0||tickSz<=0||StopLoss_Pts<=0) return NormalizeLot(0.01);
+   double lot = risk / (StopLoss_Pts * _Point / tickSz * tickVal);
+   return MathMin(NormalizeLot(lot), Lot_Max);
+}`;
+  }
+
+  // ── Trail / BE ──
+  const trailFn = useTrail ? `
+void TrailPositions() {
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      ulong tk = PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      double op  = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl  = PositionGetDouble(POSITION_SL);
+      double tp0 = PositionGetDouble(POSITION_TP);
+      int type   = (int)PositionGetInteger(POSITION_TYPE);
+      double ask = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol,SYMBOL_BID);
+      if(type==POSITION_TYPE_BUY) {
+         double profit_pts = (bid-op)/_Point;
+         if(profit_pts >= Trail_Start) {
+            double newSL = NormalizeDouble(bid - Trail_Step*_Point, _Digits);
+            if(newSL > sl) trade.PositionModify(tk, newSL, tp0);
+         }
+      } else {
+         double profit_pts = (op-ask)/_Point;
+         if(profit_pts >= Trail_Start) {
+            double newSL = NormalizeDouble(ask + Trail_Step*_Point, _Digits);
+            if(sl==0||newSL < sl) trade.PositionModify(tk, newSL, tp0);
+         }
+      }
+   }
+}` : '';
+
+  const beFn = useBE ? `
+void BreakEvenPositions() {
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      ulong tk = PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      double op  = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl  = PositionGetDouble(POSITION_SL);
+      double tp0 = PositionGetDouble(POSITION_TP);
+      int type   = (int)PositionGetInteger(POSITION_TYPE);
+      double ask = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol,SYMBOL_BID);
+      if(type==POSITION_TYPE_BUY) {
+         if((bid-op)/_Point >= BE_Trigger && sl < op) {
+            double newSL = NormalizeDouble(op + BE_Offset*_Point, _Digits);
+            trade.PositionModify(tk, newSL, tp0);
+         }
+      } else {
+         if((op-ask)/_Point >= BE_Trigger && (sl>op||sl==0)) {
+            double newSL = NormalizeDouble(op - BE_Offset*_Point, _Digits);
+            trade.PositionModify(tk, newSL, tp0);
+         }
+      }
+   }
+}` : '';
+
+  // ── Close opposite ──
+  const closeOppCode = closeOpp ? `
+   if(buySignal  && CountPositions(POSITION_TYPE_SELL)>0) ClosePositions(POSITION_TYPE_SELL);
+   if(sellSignal && CountPositions(POSITION_TYPE_BUY) >0) ClosePositions(POSITION_TYPE_BUY);` : '';
+
+  // ── Hours filter ──
+  const hoursCheck = useHours ? `
+   MqlDateTime t; TimeToStruct(TimeCurrent(),t);
+   if(t.hour < Trade_HourStart || t.hour >= Trade_HourEnd) return;` : '';
+
+  // ── Spread filter ──
+  const spreadCheck = useSpread ? `
+   if((int)SymbolInfoInteger(_Symbol,SYMBOL_SPREAD) > Max_Spread) return;` : '';
+
+  // ── Daily loss ──
+  const ddLossCheck = useDDLoss ? `
+   if(AccountInfoDouble(ACCOUNT_BALANCE)-AccountInfoDouble(ACCOUNT_EQUITY) >= Daily_Loss_Limit) return;` : '';
+
+  // ── Max positions ──
+  const maxPosCheck = useMaxPos ? `
+   if(PositionsTotal() >= Max_Positions) return;` : '';
+
+  // ── One per bar ──
+  const oneBarCode = onePerBar ? `
+   static datetime lastBar = 0;
+   datetime curBar = iTime(_Symbol, PERIOD_CURRENT, 0);
+   if(curBar == lastBar) return;
+   lastBar = curBar;` : '';
+
+  // ── Direction handling ──
+  const dirCode = bothDir ? `
+   if(buySignal)  OpenBuy();
+   if(sellSignal) OpenSell();` : `
+   if(buySignal && CountPositions(POSITION_TYPE_BUY)==0)  OpenBuy();
+   if(sellSignal && CountPositions(POSITION_TYPE_SELL)==0) OpenSell();`;
+
+  const gridTPCloseAll = currentStrat === 'grid' ? `
+void CloseAllPositions() {
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      trade.PositionClose(tk,-1);
+   }
+}` : '';
+
+  // ── Grid last price update ──
+  const gridLastPrice = currentStrat === 'grid' ? `
+   if(buySignal || sellSignal) gLastGridPrice = SymbolInfoDouble(_Symbol,SYMBOL_ASK);` : '';
+
+  // ════════════════════════════
+  // ASSEMBLE CODE
+  // ════════════════════════════
+  return `//+------------------------------------------------------------------+
+//| ${name}.mq5                                                     |
+//| Strategy : ${STRATS[currentStrat].name}                                      |
+//| Generated: ${new Date().toLocaleDateString('th-TH')}                                       |
+//+------------------------------------------------------------------+
+#property copyright "${author}"
+#property version   "${ver}"
+#property description "${desc}"
+#property strict
+#include <Trade\\Trade.mqh>
+
+//=== INPUT PARAMETERS =================================================
+input group "=== EA Settings ==="
+input int    MagicNumber   = ${magic};
+input int    Deviation_Pts = ${dev};     // Slippage tolerance
+
+input group "=== Strategy ==="
+${indInputs}
+
+input group "=== Lot & Risk ==="
+input double Lot_Size      = ${lotVal};  // ${lotType==='fixed'?'Fixed lot':lotType==='pct'?'% of balance':'% risk per trade'}
+input double Lot_Max       = ${lotMax};  // Max lot size
+input int    StopLoss_Pts  = ${slPts};   // Stop loss (points)
+input int    TakeProfit_Pts= ${tpPts};   // Take profit (points)
+${useTrail ? `
+input group "=== Trailing Stop ==="
+input bool   Use_Trail     = true;
+input int    Trail_Start   = ${trailStart}; // Profit to start trail (pts)
+input int    Trail_Step    = ${trailStep};  // Trail step (pts)` : ''}
+${useBE ? `
+input group "=== Break Even ==="
+input bool   Use_BE        = true;
+input int    BE_Trigger    = ${beTrig};  // Profit to trigger BE (pts)
+input int    BE_Offset     = ${beOffset}; // Offset from entry (pts)` : ''}
+${useSpread ? `
+input group "=== Filters ==="
+input int    Max_Spread    = ${spreadMax}; // Max spread (points)` : ''}
+${useHours ? `input int    Trade_HourStart = ${hrStart}; // Trade start hour
+input int    Trade_HourEnd   = ${hrEnd};  // Trade end hour` : ''}
+${useDDLoss ? `input double Daily_Loss_Limit = ${ddLossVal}; // Max daily loss (USD)` : ''}
+${useMaxPos ? `input int    Max_Positions   = ${maxPosVal};  // Max open positions` : ''}
+
+//=== GLOBALS ===========================================================
+CTrade trade;
+${indGlobals}
+
+//=== HELPERS ===========================================================
+double NormalizeLot(double lot) {
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double mn   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double mx   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   lot = MathFloor(lot/step)*step;
+   return NormalizeDouble(MathMax(mn,MathMin(mx,lot)),2);
+}
+
+int CountPositions(int type=-1) {
+   int c=0;
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      if(type==-1||(int)PositionGetInteger(POSITION_TYPE)==type) c++;
+   }
+   return c;
+}
+
+void ClosePositions(int type) {
+   for(int i=PositionsTotal()-1;i>=0;i--) {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC)!=MagicNumber) continue;
+      if((int)PositionGetInteger(POSITION_TYPE)==type) trade.PositionClose(tk,-1);
+   }
+}
+
+${lotCalc}
+
+void OpenBuy() {
+   double lot = CalcLot();
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double sl  = (StopLoss_Pts>0)   ? NormalizeDouble(ask - StopLoss_Pts*_Point,   _Digits) : 0;
+   double tp  = (TakeProfit_Pts>0) ? NormalizeDouble(ask + TakeProfit_Pts*_Point, _Digits) : 0;
+   trade.Buy(lot, _Symbol, 0, sl, tp, "${name} BUY");
+   if(trade.ResultRetcode()!=TRADE_RETCODE_DONE)
+      PrintFormat("[BUY] FAIL: %d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+}
+
+void OpenSell() {
+   double lot = CalcLot();
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double sl  = (StopLoss_Pts>0)   ? NormalizeDouble(bid + StopLoss_Pts*_Point,   _Digits) : 0;
+   double tp  = (TakeProfit_Pts>0) ? NormalizeDouble(bid - TakeProfit_Pts*_Point, _Digits) : 0;
+   trade.Sell(lot, _Symbol, 0, sl, tp, "${name} SELL");
+   if(trade.ResultRetcode()!=TRADE_RETCODE_DONE)
+      PrintFormat("[SELL] FAIL: %d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+}
+${trailFn}
+${beFn}
+${gridTPCloseAll}
+
+//=== OnInit ============================================================
+int OnInit() {
+   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetDeviationInPoints(Deviation_Pts);
+${indInit}
+   PrintFormat("[Init] ${name} v${ver} | Magic=%d | Strategy=${STRATS[currentStrat].name}", MagicNumber);
+   return INIT_SUCCEEDED;
+}
+
+//=== OnDeinit ==========================================================
+void OnDeinit(const int reason) {
+${indDeinit}
+}
+
+//=== OnTick ============================================================
+void OnTick() {
+   // ── Per-bar filter ──${oneBarCode}
+
+   // ── Filters ──${hoursCheck}${spreadCheck}${ddLossCheck}${maxPosCheck}
+
+   // ── Trailing stop & Break even ──
+${useTrail ? '   TrailPositions();' : ''}
+${useBE ? '   BreakEvenPositions();' : ''}
+
+   // ── Generate signals ──
+${indSignal}
+
+   // ── Close opposite ──${closeOppCode}
+${gridLastPrice}
+   // ── Open orders ──${dirCode}
+}
+//+------------------------------------------------------------------+`;
+}
+
+// ═══════════════════════════════════════════
+// SYNTAX HIGHLIGHT
+// ═══════════════════════════════════════════
+function highlight(code) {
+  return code
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    // comments
+    .replace(/(\/\/.*)/g,'<span class="cm">$1</span>')
+    // strings
+    .replace(/"([^"]*)"/g,'"<span class="str">$1</span>"')
+    // preprocessor
+    .replace(/^(#\w+)/gm,'<span class="pp">$1</span>')
+    // keywords
+    .replace(/\b(input|group|int|double|bool|string|void|return|if|else|for|while|true|false|datetime|ulong|static)\b/g,'<span class="kw">$1</span>')
+    // types
+    .replace(/\b(CTrade|ENUM_TIMEFRAMES|PERIOD_\w+|INVALID_HANDLE|POSITION_TYPE_BUY|POSITION_TYPE_SELL|SYMBOL_\w+|TRADE_RETCODE_DONE|ACCOUNT_\w+|MODE_\w+|STO_\w+|PRICE_\w+|DEAL_\w+)\b/g,'<span class="tp">$1</span>')
+    // functions
+    .replace(/\b(iMA|iRSI|iBands|iMACD|iStochastic|iTime|iClose|SymbolInfoDouble|SymbolInfoInteger|AccountInfoDouble|PositionsTotal|PositionGetTicket|PositionSelectByTicket|PositionGetString|PositionGetInteger|PositionGetDouble|HistorySelect|HistoryDealsTotal|HistoryDealGetTicket|HistoryDealGetString|HistoryDealGetDouble|HistoryDealGetInteger|CopyBuffer|NormalizeDouble|MathFloor|MathMin|MathMax|ArraySetAsSeries|PrintFormat|Print|TimeToStruct|TimeCurrent|IndicatorRelease)\b/g,'<span class="fn">$1</span>')
+    // numbers
+    .replace(/\b(\d+\.?\d*)\b/g,'<span class="num">$1</span>');
+}
+
+function renderCode(code) {
+  document.getElementById('code-output').innerHTML = highlight(code);
+}
+
+// ═══════════════════════════════════════════
+// PARAM LIST TAB
+// ═══════════════════════════════════════════
+function renderParamList() {
+  const s = STRATS[currentStrat];
+  let html = `<span style="color:#ffc832;font-size:12px">PARAMETER LIST — ${gv('ea-name')}\n\n</span>`;
+  html += `<span style="color:#4a6a9a">═══ EA SETTINGS ═══\n</span>`;
+  html += `<span style="color:#c0d0e8">  MagicNumber     = </span><span style="color:#e0a840">${gv('ea-magic')}\n</span>`;
+  html += `  Deviation_Pts   = <span style="color:#e0a840">${gv('deviation')}\n</span>`;
+  html += `\n<span style="color:#4a6a9a">═══ ${s.name.toUpperCase()} STRATEGY ═══\n</span>`;
+  s.params.forEach(p => {
+    const val = gv(p.id);
+    html += `  ${p.label.padEnd(16)} = <span style="color:#e0a840">${val}\n</span>`;
+  });
+  html += `\n<span style="color:#4a6a9a">═══ LOT & RISK ═══\n</span>`;
+  html += `  Lot_Type        = <span style="color:#40d070">${gv('lot-type')}\n</span>`;
+  html += `  Lot_Size        = <span style="color:#e0a840">${gv('lot-val')}\n</span>`;
+  html += `  Lot_Max         = <span style="color:#e0a840">${gv('lot-max')}\n</span>`;
+  html += `  StopLoss_Pts    = <span style="color:#e04040">${gv('sl-pts')}\n</span>`;
+  html += `  TakeProfit_Pts  = <span style="color:#40d070">${gv('tp-pts')}\n</span>`;
+  if(gc('use-trail')) html += `  Trail_Start     = <span style="color:#e0a840">${gv('trail-start')}\n</span>  Trail_Step      = <span style="color:#e0a840">${gv('trail-step')}\n</span>`;
+  if(gc('use-be'))    html += `  BE_Trigger      = <span style="color:#e0a840">${gv('be-trig')}\n</span>  BE_Offset       = <span style="color:#e0a840">${gv('be-offset')}\n</span>`;
+  html += `\n<span style="color:#4a6a9a">═══ FILTERS ═══\n</span>`;
+  if(gc('use-spread')) html += `  Max_Spread      = <span style="color:#e0a840">${gv('spread-max')}\n</span>`;
+  if(gc('use-hours'))  html += `  Trade_Hours     = <span style="color:#e0a840">${gv('hr-start')}:00 - ${gv('hr-end')}:00\n</span>`;
+  if(gc('use-ddloss')) html += `  Daily_Loss_Lmt  = <span style="color:#e0a840">$${gv('ddloss-val')}\n</span>`;
+  if(gc('use-maxpos')) html += `  Max_Positions   = <span style="color:#e0a840">${gv('maxpos-val')}\n</span>`;
+  document.getElementById('code-output').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// LOGIC SUMMARY TAB
+// ═══════════════════════════════════════════
+function renderLogicSummary() {
+  const s = STRATS[currentStrat];
+  const arrows = {
+    ema:  '• EMA Fast crosses ABOVE EMA Slow → BUY\n• EMA Fast crosses BELOW EMA Slow → SELL',
+    rsi:  `• RSI crosses UP through OS (${gv('rsi-os')}) → BUY\n• RSI crosses DOWN through OB (${gv('rsi-ob')}) → SELL`,
+    bb:   '• Price closes BELOW Lower Band → BUY (mean reversion)\n• Price closes ABOVE Upper Band → SELL (mean reversion)',
+    macd: '• MACD line crosses ABOVE Signal → BUY\n• MACD line crosses BELOW Signal → SELL',
+    grid: `• ราคาลง ${gv('grid-step')} pts จาก last → เปิด BUY\n• ราคาขึ้น ${gv('grid-step')} pts จาก last → เปิด SELL\n• Total profit ≥ $${gv('grid-tp')} → ปิดทุก order`,
+    scalp:`• Price ABOVE MA(${gv('sc-ma')}) AND Stoch OS cross UP → BUY\n• Price BELOW MA(${gv('sc-ma')}) AND Stoch OB cross DN → SELL`,
+  };
+  let html = `<span style="color:#ffc832;font-size:12px">LOGIC SUMMARY — ${gv('ea-name')}\n</span>
+<span style="color:#3a5070">${'─'.repeat(50)}\n</span>
+
+<span style="color:#4a6a9a">STRATEGY: </span><span style="color:#80c0ff">${s.name}\n\n</span>`;
+  html += `<span style="color:#6080b0">SIGNAL LOGIC:\n</span>`;
+  html += `<span style="color:#c0d0e8">${arrows[currentStrat]}\n\n</span>`;
+  html += `<span style="color:#6080b0">ENTRY CONDITIONS:\n</span>`;
+  if(gc('one-per-bar')) html += `<span style="color:#50d080">  ✓ </span>One trade per bar only\n`;
+  if(gc('use-spread'))  html += `<span style="color:#50d080">  ✓ </span>Spread ≤ ${gv('spread-max')} pts\n`;
+  if(gc('use-hours'))   html += `<span style="color:#50d080">  ✓ </span>Only trade ${gv('hr-start')}:00–${gv('hr-end')}:00\n`;
+  if(gc('use-ddloss'))  html += `<span style="color:#e08040">  ⚠ </span>Stop if daily loss ≥ $${gv('ddloss-val')}\n`;
+  if(gc('use-maxpos'))  html += `<span style="color:#e08040">  ⚠ </span>Max ${gv('maxpos-val')} open positions\n`;
+  if(!gc('both-dir'))   html += `<span style="color:#5080c0">  ℹ </span>One direction at a time\n`;
+  if(gc('close-opp'))   html += `<span style="color:#5080c0">  ℹ </span>Close opposite on signal flip\n`;
+  html += `\n<span style="color:#6080b0">RISK MANAGEMENT:\n</span>`;
+  html += `<span style="color:#e04040">  SL: </span>${gv('sl-pts')} pts\n`;
+  html += `<span style="color:#40d070">  TP: </span>${gv('tp-pts')} pts\n`;
+  html += `<span style="color:#c0d0e8">  Lot: </span>${gv('lot-val')} (${gv('lot-type')})\n`;
+  if(gc('use-trail'))  html += `<span style="color:#ffc832">  Trail: </span>start ${gv('trail-start')}pts, step ${gv('trail-step')}pts\n`;
+  if(gc('use-be'))     html += `<span style="color:#ffc832">  BE: </span>trigger ${gv('be-trig')}pts, offset ${gv('be-offset')}pts\n`;
+  html += `\n<span style="color:#6080b0">EXPECTED BEHAVIOR:\n</span>`;
+  const rr = (gv('tp-pts')/gv('sl-pts')).toFixed(2);
+  html += `<span style="color:#c0d0e8">  Risk:Reward = 1:${rr}\n</span>`;
+  html += `  Magic Number  = ${gv('ea-magic')}\n`;
+  html += `  Timeframe     = ${gv('tf')}\n`;
+  document.getElementById('code-output').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+function setTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  generateCode();
+}
+
+// ═══════════════════════════════════════════
+// VALIDATE
+// ═══════════════════════════════════════════
+function validateCode() {
+  const sl  = parseInt(gv('sl-pts'));
+  const tp  = parseInt(gv('tp-pts'));
+  const lot = parseFloat(gv('lot-val'));
+  const mag = parseInt(gv('ea-magic'));
+
+  setV('v-sl',   sl>0,   '✓ SL set',   '✗ SL = 0 !');
+  setV('v-tp',   tp>0,   '✓ TP set',   '✗ TP = 0 !');
+  setV('v-lot',  lot>0,  '✓ Lot valid','✗ Lot invalid');
+  setV('v-magic',mag>0,  '✓ Magic OK', '✗ Magic = 0');
+  const vErr = document.getElementById('v-err');
+  if(sl>0 && tp>0 && tp<sl) {
+    vErr.className = 'badge warn'; vErr.style.display='inline-flex';
+    vErr.textContent = '⚠ TP < SL (low RR)';
+  } else { vErr.style.display='none'; }
+}
+
+function setV(id, ok, okTxt, errTxt) {
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.className = 'badge ' + (ok?'ok':'err');
+  el.textContent = ok ? okTxt : errTxt;
+}
+
+// ═══════════════════════════════════════════
+// COPY / DOWNLOAD
+// ═══════════════════════════════════════════
+function copyCode() {
+  navigator.clipboard.writeText(buildCode())
+    .then(()=>alert('Copied! นำไป paste ใน MetaEditor แล้ว Compile'))
+    .catch(()=>alert('Copy failed — ใช้ Ctrl+A, Ctrl+C ใน code panel'));
+}
+
+function downloadCode() {
+  const name = (gv('ea-name')||'MyEA').replace(/[^a-zA-Z0-9_]/g,'_');
+  const blob = new Blob([buildCode()], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.mq5';
+  a.click();
+}
+
+// ═══════════════════════════════════════════
+// GUIDE
+// ═══════════════════════════════════════════
+function toggleGuide() {
+  document.getElementById('guide').classList.toggle('open');
+}
+</script>
+</body>
+</html>
