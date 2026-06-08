@@ -613,57 +613,64 @@ bool TryTP(int &mgs[], double target, string tag) {
 //|                 SELL pool (ไม้ SELL กำไรสูงสุด N ไม้ข้ามทุก magic)|
 //| ปิดทั้ง pool เมื่อกำไรรวมถึงเป้า — ไม่ปิดแยกรายไม้              |
 //+------------------------------------------------------------------+
+// helper: เก็บ N ไม้ที่กำไรสูงสุดตามทิศ แล้วดึง AbsorbN ไม้เสียหนักสุดของทิศเดียวกัน
+// fire เมื่อ winSum >= target และ groupNet >= AbsorbMinNet
+void FireBestSidePool(ENUM_POSITION_TYPE dir, int bestN, double target, string tag) {
+   if(bestN <= 0 || target <= 0.0) return;
+
+   int    total = PositionsTotal();
+   ulong  wTk[];  ArrayResize(wTk, total);
+   double wPf[];  ArrayResize(wPf, total);
+   int    wCnt = 0;
+   ulong  lTk[];  ArrayResize(lTk, total);
+   double lPf[];  ArrayResize(lPf, total);
+   int    lCnt = 0;
+
+   for(int i = total-1; i >= 0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != dir) continue;
+      if(IsRunner(t)) continue;
+      double pp = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(pp > 0) { wTk[wCnt] = t; wPf[wCnt] = pp; wCnt++; }
+      else        { lTk[lCnt] = t; lPf[lCnt] = pp; lCnt++; }
+   }
+
+   // เรียง winners: กำไรสูงสุดก่อน
+   if(wCnt > 1) SortPairsByPnl(wTk, wPf, wCnt, false);
+   int n = MathMin(bestN, wCnt);
+   double winSum = 0;
+   for(int i = 0; i < n; i++) winSum += wPf[i];
+
+   if(winSum < target) return;  // winners ยังไม่ถึงเป้า
+
+   // AbsorbN — เลือกไม้เสียหนักสุดของทิศเดียวกัน
+   double loserSum = 0;
+   int    absN = 0;
+   if(AbsorbN > 0 && lCnt > 0) {
+      if(lCnt > 1) SortPairsByPnl(lTk, lPf, lCnt, true); // worst first
+      absN = MathMin(AbsorbN, lCnt);
+      for(int i = 0; i < absN; i++) loserSum += lPf[i];
+   }
+
+   double groupNet = winSum + loserSum;
+   if(groupNet < AbsorbMinNet) {
+      PrintFormat("[%s] skip — net=%.2f < AbsorbMinNet=%.2f", tag, groupNet, AbsorbMinNet);
+      return;
+   }
+
+   PrintFormat("[%s] winSum=%.2f net=%.2f target=%.2f winners=%d absorb=%d",
+               tag, winSum, groupNet, target, n, absN);
+
+   // ปิดไม้เสียก่อน แล้วตามด้วยไม้กำไร
+   for(int i = 0; i < absN; i++)  CloseByTicket(lTk[i]);
+   for(int i = 0; i < n; i++)     CloseByTicket(wTk[i]);
+}
+
 void ChkBestSideTP() {
-   // ── BUY pool ─────────────────────────────────────────────────────
-   if(BestBuyN > 0 && TPBestBuy > 0.0) {
-      int    total = PositionsTotal();
-      ulong  tk[];  ArrayResize(tk, total);
-      double pf[];  ArrayResize(pf, total);
-      int    cnt = 0;
-      for(int i = total-1; i >= 0; i--) {
-         ulong t = PositionGetTicket(i);
-         if(!PositionSelectByTicket(t)) continue;
-         if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-         if(PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY) continue;
-         if(IsRunner(t)) continue;
-         double pp = PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
-         if(pp <= 0) continue;
-         tk[cnt] = t; pf[cnt] = pp; cnt++;
-      }
-      if(cnt > 1) SortPairsByPnl(tk, pf, cnt, false); // best first
-      int n = MathMin(BestBuyN, cnt);
-      double sum = 0;
-      for(int i = 0; i < n; i++) sum += pf[i];
-      if(sum >= TPBestBuy) {
-         PrintFormat("[BestBuyTP] pool=%.2f >= %.2f — ปิด %d ไม้", sum, TPBestBuy, n);
-         for(int i = 0; i < n; i++) CloseByTicket(tk[i]);
-      }
-   }
-   // ── SELL pool ────────────────────────────────────────────────────
-   if(BestSellN > 0 && TPBestSell > 0.0) {
-      int    total = PositionsTotal();
-      ulong  tk[];  ArrayResize(tk, total);
-      double pf[];  ArrayResize(pf, total);
-      int    cnt = 0;
-      for(int i = total-1; i >= 0; i--) {
-         ulong t = PositionGetTicket(i);
-         if(!PositionSelectByTicket(t)) continue;
-         if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-         if(PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_SELL) continue;
-         if(IsRunner(t)) continue;
-         double pp = PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
-         if(pp <= 0) continue;
-         tk[cnt] = t; pf[cnt] = pp; cnt++;
-      }
-      if(cnt > 1) SortPairsByPnl(tk, pf, cnt, false);
-      int n = MathMin(BestSellN, cnt);
-      double sum = 0;
-      for(int i = 0; i < n; i++) sum += pf[i];
-      if(sum >= TPBestSell) {
-         PrintFormat("[BestSellTP] pool=%.2f >= %.2f — ปิด %d ไม้", sum, TPBestSell, n);
-         for(int i = 0; i < n; i++) CloseByTicket(tk[i]);
-      }
-   }
+   FireBestSidePool(POSITION_TYPE_BUY,  BestBuyN,  TPBestBuy,  "BestBuyTP");
+   FireBestSidePool(POSITION_TYPE_SELL, BestSellN, TPBestSell, "BestSellTP");
 }
 
 //+------------------------------------------------------------------+
