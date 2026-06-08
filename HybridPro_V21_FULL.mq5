@@ -741,111 +741,6 @@ void ChkAllTP() {
    }
 }
 
-//+------------------------------------------------------------------+
-//| Runner system — Pool รวม M1+M2+M3 ไม่แยก magic                  |
-//|                                                                  |
-//| หลักการ:                                                        |
-//|   1. ทุก tick หา Top-N กำไรสูงสุดจากทุก magic รวมกัน           |
-//|   2. วาง BE-SL เฉพาะเมื่อ pool ครบ RunKeepN ไม้เท่านั้น        |
-//|   3. Runner ชน BE → ออกอัตโนมัติ (SL hit) → pool ลดลง          |
-//|      → ระบบหา runner ใหม่แทนจนครบ N อีกครั้ง                   |
-//|   4. TP runner: ปิดทั้ง pool เมื่อกำไรรวม >= TPRun             |
-//+------------------------------------------------------------------+
-void UpdateRunners() {
-   if(RunKeepN <= 0) { ArrayResize(gRunTk, 0); gRunPoolFull = false; return; }
-
-   // ── หา Top-N กำไรสูงสุดจากทุก magic รวมกัน ─────────────────────
-   int    totalPos = PositionsTotal();
-   ulong  allTk[]; ArrayResize(allTk, totalPos);
-   double allPf[]; ArrayResize(allPf, totalPos);
-   int    allCnt = 0;
-
-   for(int i = totalPos - 1; i >= 0; i--) {
-      ulong t = PositionGetTicket(i);
-      if(!PositionSelectByTicket(t)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-      int m = (int)PositionGetInteger(POSITION_MAGIC);
-      // เช็คเฉพาะ magic ที่ enable
-      if(m == MAGIC_1 && !En1) continue;
-      if(m == MAGIC_2 && !En2) continue;
-      if(m == MAGIC_3 && !En3) continue;
-      double pp = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-      if(pp <= 0) continue;  // เอาเฉพาะไม้กำไร
-      allTk[allCnt] = t;
-      allPf[allCnt] = pp;
-      allCnt++;
-   }
-
-   // เรียง best first (descending)
-   if(allCnt > 1) SortPairsByPnl(allTk, allPf, allCnt, false);
-
-   // เลือก Top-N
-   int n = MathMin(RunKeepN, allCnt);
-   ArrayResize(gRunTk, n);
-   for(int i = 0; i < n; i++) gRunTk[i] = allTk[i];
-
-   // ── ตรวจว่า pool ครบหรือยัง ─────────────────────────────────────
-   bool wasFull = gRunPoolFull;
-   gRunPoolFull = (n >= RunKeepN);
-
-   // ── วาง BE-SL เฉพาะเมื่อ pool ครบ RunKeepN ────────────────────
-   // ถ้า pool ยังไม่ครบ → ไม่วาง BE → runner สามารถออกจาก pool โดย
-   // ไม่มี SL protect (ปล่อยให้เป็น grid ปกติรอ TP ต่อ)
-   if(gRunPoolFull && RunBEPts > 0) {
-      for(int i = 0; i < n; i++) ApplyBESL(gRunTk[i], RunBEPts);
-   }
-
-   // ── Log เมื่อ pool เพิ่งครบ ──────────────────────────────────────
-   if(!wasFull && gRunPoolFull)
-      PrintFormat("[Runner] Pool ครบ %d ไม้แล้ว — วาง BE-SL ทุกตัว", n);
-}
-
-void ChkRunTP() {
-   if(gNormalTPFired) return;                    // ไม่ปิด runner ซ้อนกับ normal TP
-   if(!gRunPoolFull) return;                     // รอ pool ครบก่อน
-   if(RunKeepN <= 0 || ArraySize(gRunTk) == 0) return;
-
-   // คำนวณกำไรรวมของ runner pool
-   double rPNL = 0;
-   int    alive = 0;
-   for(int i = 0; i < ArraySize(gRunTk); i++) {
-      if(!PositionSelectByTicket(gRunTk[i])) continue;
-      rPNL += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-      alive++;
-   }
-
-   // TP runner: ปิดทั้ง pool + ดึงไม้เสียออกด้วย (AbsorbN)
-   if(alive > 0 && rPNL >= TPRun) {
-      PrintFormat("[RunnerTP] pool กำไร %.2f >= %.2f — ปิดพร้อม AbsorbN", rPNL, TPRun);
-
-      // ── ดึงไม้เสียหนักสุด AbsorbN ไม้จากทุก magic ─────────────
-      if(AbsorbN > 0) {
-         int    tp  = PositionsTotal();
-         ulong  lTk[]; ArrayResize(lTk, tp);
-         double lPf[]; ArrayResize(lPf, tp);
-         int    lCnt = 0;
-         for(int i = tp - 1; i >= 0; i--) {
-            ulong t = PositionGetTicket(i);
-            if(!PositionSelectByTicket(t)) continue;
-            if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-            if(IsRunner(t)) continue;  // ไม่ซ้ำกับ runner pool
-            double pp = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-            if(pp >= 0) continue;
-            lTk[lCnt] = t; lPf[lCnt] = pp; lCnt++;
-         }
-         if(lCnt > 1) SortPairsByPnl(lTk, lPf, lCnt, true); // worst first
-         int takeL = MathMin(AbsorbN, lCnt);
-         for(int i = 0; i < takeL; i++) {
-            PrintFormat("[RunnerTP][AbsorbN] ปิดไม้เสีย tk=%I64u pnl=%.2f", lTk[i], lPf[i]);
-            CloseByTicket(lTk[i]);
-         }
-      }
-
-      // ── ปิด runner pool ─────────────────────────────────────────
-      for(int i = 0; i < ArraySize(gRunTk); i++) CloseByTicket(gRunTk[i]);
-      gRunPoolFull = false;  // reset — เริ่มจับ runner ใหม่
-   }
-}
 
 //+------------------------------------------------------------------+
 //| [PATCH] GridLot — แยก multiplier ตามทิศทางกราฟ                  |
@@ -1390,7 +1285,6 @@ void ShowDashboard() {
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    double bal=AccountInfoDouble(ACCOUNT_BALANCE);
    int    spd=(int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   int    rCnt=ArraySize(gRunTk);  // runner pool รวมทุก magic
    bool   m1stopped=(gTrig.active && gTrig.stoppedMagic==MAGIC_1);
    string m1sta=m1stopped?"⛔ STOP":"↕ BUY";
    color  m1clr=m1stopped?CL_NEG:C'140,205,255';
@@ -1440,7 +1334,7 @@ void ShowDashboard() {
    int sep01=ty+TRIG_H;
    Rect(PFX+"SEP01",xi,sep01,PW_IN,1,CB_SEP,CB_SEP);
    int sy1=sep01+1;
-   DrawMagicSec("M1",xi,sy1,CA_M1,CB_M1,"M1",m1sta,m1clr,c1,MaxGrid1,rCnt,RunKeepN,p1,l1,cgp1,los1,TP1);
+   DrawMagicSec("M1",xi,sy1,CA_M1,CB_M1,"M1",m1sta,m1clr,c1,MaxGrid1,ArraySize(gBestBuyTk),BestBuyN,p1,l1,cgp1,los1,TP1);
    int s12=sy1+MSEC_H;
    Rect(PFX+"SEP12",xi,s12,PW_IN,1,CB_SEP,CB_SEP);
    int sy2=s12+1;
@@ -1448,7 +1342,7 @@ void ShowDashboard() {
    int s23=sy2+M2R_H;
    Rect(PFX+"SEP23",xi,s23,PW_IN,1,CB_SEP,CB_SEP);
    int sy3=s23+1;
-   DrawMagicSec("M3",xi,sy3,CA_M3,CB_M3,"M3",m3sta,m3clr,c3,MaxGrid3,rCnt,RunKeepN,p3,l3,cgp3,los3,TP3);
+   DrawMagicSec("M3",xi,sy3,CA_M3,CB_M3,"M3",m3sta,m3clr,c3,MaxGrid3,ArraySize(gBestSellTk),BestSellN,p3,l3,cgp3,los3,TP3);
    int sBri=sy3+MSEC_H;
    Rect(PFX+"SEPBRI",xi,sBri,PW_IN,2,CB_SEP_HI,CB_SEP_HI);
    int tpY=sBri+2;
@@ -1528,7 +1422,6 @@ int OnInit() {
    gADXDir=0;
    gPeakEquity=AccountInfoDouble(ACCOUNT_EQUITY);
    gMaxDDPct=0.0;
-   ArrayResize(gRunTk,0); gRunPoolFull = false;
    RestoreDailyLots();
    ArrayInitialize(gCalPnl,0.0); ArrayInitialize(gCalLot,0.0);
    gCalDirty=true;
@@ -1553,14 +1446,13 @@ void OnTick() {
    gNormalTPFired = false;
    gADXDir = ADXDir();
    ChkDayRollover();
-   UpdateRunners();
+   UpdateBestSide();
    ChkTrigger();
    ChkGrid1();
    ChkGrid3();
    ChkM2();
    ChkAllTP();
    ChkBestSideTP();
-   ChkRunTP();
    double _eq = AccountInfoDouble(ACCOUNT_EQUITY);
    if(_eq > gPeakEquity) gPeakEquity = _eq;
    double _dd = (gPeakEquity > 0) ? (gPeakEquity - _eq) / gPeakEquity * 100.0 : 0.0;
