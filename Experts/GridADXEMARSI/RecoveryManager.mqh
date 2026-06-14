@@ -74,6 +74,10 @@ public:
       return true;
    }
 
+   //--- Update recovery distance dynamically (called each tick by ATR logic)
+   void SetRecoveryDistance(double dist_points) { m_recovery_distance = dist_points; }
+   double GetRecoveryDistance()                 { return m_recovery_distance; }
+
    //--- Check whether market has moved far enough from the weighted average
    //  to justify opening a recovery order.
    //

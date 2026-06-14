@@ -26,6 +26,13 @@ input double InpAdxThreshold       = 25.0;   // ADX trend threshold
 input int    InpEmaPeriod          = 200;    // EMA period
 input int    InpRsiPeriod          = 14;     // RSI period
 
+// === ATR Dynamic Distance ===
+input int    InpAtrPeriod          = 14;     // ATR period
+input double InpAtrGridMultiplier  = 1.5;    // grid_distance = ATR × this value
+input double InpAtrRecMultiplier   = 1.0;    // recovery_distance = ATR × this value
+input double InpMinGridPoints      = 30.0;   // minimum grid/recovery distance (points)
+input double InpMaxGridPoints      = 1000.0; // maximum grid/recovery distance (points)
+
 // === Grid ===
 input double InpBaseLot            = 0.01;   // Base lot size
 input double InpGridDistance       = 100.0;  // Grid distance (points)
@@ -73,6 +80,11 @@ CTrailingManager g_trailer;
 
 ENUM_EA_STATE    g_state = STATE_IDLE;
 
+// Dynamic distances updated each tick from ATR
+// Initialised to InpGridDistance / InpRecoveryDistance until ATR is ready
+double           g_dyn_grid_dist     = 0.0;
+double           g_dyn_recovery_dist = 0.0;
+
 //+------------------------------------------------------------------+
 //| Helper: human-readable state name                                 |
 //+------------------------------------------------------------------+
@@ -111,11 +123,11 @@ void ResetAll()
 
 //+------------------------------------------------------------------+
 //| Helper: stop-loss distance in points for grid orders             |
-//  Hard stop = grid_distance * max_grid_orders points from entry.   |
 //+------------------------------------------------------------------+
 double GridSLPoints()
 {
-   return InpGridDistance * InpMaxGridOrders;
+   double d = (g_dyn_grid_dist > 0.0) ? g_dyn_grid_dist : InpGridDistance;
+   return d * InpMaxGridOrders;
 }
 
 //+------------------------------------------------------------------+
@@ -123,7 +135,38 @@ double GridSLPoints()
 //+------------------------------------------------------------------+
 double RecoverySLPoints()
 {
-   return InpRecoveryDistance * InpMaxRecoveryOrders;
+   double d = (g_dyn_recovery_dist > 0.0) ? g_dyn_recovery_dist : InpRecoveryDistance;
+   return d * InpMaxRecoveryOrders;
+}
+
+//+------------------------------------------------------------------+
+//| Helper: recompute ATR-based distances and push to sub-managers   |
+//+------------------------------------------------------------------+
+void UpdateATRDistances()
+{
+   double atr = g_trend.GetATR();
+   if(atr <= 0.0) return;
+
+   double atr_pts = atr / _Point;
+
+   double new_grid = atr_pts * InpAtrGridMultiplier;
+   new_grid = MathMax(InpMinGridPoints, MathMin(InpMaxGridPoints, new_grid));
+
+   double new_rec = atr_pts * InpAtrRecMultiplier;
+   new_rec = MathMax(InpMinGridPoints, MathMin(InpMaxGridPoints, new_rec));
+
+   if(MathAbs(new_grid - g_dyn_grid_dist) > 0.5 ||
+      MathAbs(new_rec  - g_dyn_recovery_dist) > 0.5)
+   {
+      g_logger.Info(StringFormat("ATR=%.5f  grid_dist=%.1f pts  rec_dist=%.1f pts",
+                                 atr, new_grid, new_rec));
+   }
+
+   g_dyn_grid_dist     = new_grid;
+   g_dyn_recovery_dist = new_rec;
+
+   g_grid.SetGridDistance(new_grid);
+   g_recovery.SetRecoveryDistance(new_rec);
 }
 
 //+------------------------------------------------------------------+
@@ -156,9 +199,9 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
    }
 
-   // Initialise trend filter
+   // Initialise trend filter (includes ATR handle)
    if(!g_trend.Init(InpAdxPeriod, InpAdxThreshold, InpEmaPeriod, InpRsiPeriod,
-                    _Symbol, PERIOD_CURRENT))
+                    InpAtrPeriod, _Symbol, PERIOD_CURRENT))
    {
       g_logger.Error("OnInit: TrendFilter.Init failed");
       return INIT_FAILED;
@@ -299,6 +342,11 @@ void OnTick()
    }
 
    // ----------------------------------------------------------------
+   // Step 7b — recompute grid/recovery distances from ATR
+   // ----------------------------------------------------------------
+   UpdateATRDistances();
+
+   // ----------------------------------------------------------------
    // Step 8 — sync in-memory order records with live server positions
    // ----------------------------------------------------------------
    g_grid.SyncWithServer();
@@ -432,4 +480,8 @@ void OnTick()
                             g_recovery.GetRecoveryCount(),
                             g_grid.GetTotalProfit(),
                             g_risk.GetCurrentDrawdownPct());
+   if(InpVerboseLog)
+      g_logger.Info(StringFormat("ATR=%.5f  gDist=%.1f pts  rDist=%.1f pts  ADX=%.2f  RSI=%.2f",
+                                 g_trend.GetATR(), g_dyn_grid_dist, g_dyn_recovery_dist,
+                                 g_trend.GetADX(), g_trend.GetRSI()));
 }

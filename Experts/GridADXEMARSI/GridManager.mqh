@@ -128,6 +128,10 @@ public:
       return true;
    }
 
+   //--- Update grid distance dynamically (called each tick by ATR logic)
+   void SetGridDistance(double dist_points) { m_grid_distance = dist_points; }
+   double GetGridDistance()                 { return m_grid_distance; }
+
    //--- Decide whether a new grid layer should be opened.
    //  Condition: price has moved at least grid_distance points away from
    //  the last opened grid price, in the direction of the grid.
