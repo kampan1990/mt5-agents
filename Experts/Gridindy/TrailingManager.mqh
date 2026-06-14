@@ -1,6 +1,6 @@
-//+------------------------------------------------------------------+
+﻿//+------------------------------------------------------------------+
 //| TrailingManager.mqh                                               |
-//| GridADXEMARSI EA                                                  |
+//| Gridindy EA                                                  |
 //| Version: 1.0.0                                                    |
 //| Created: 2026-06-14                                               |
 //+------------------------------------------------------------------+
@@ -54,7 +54,12 @@ public:
 
       m_trade.SetExpertMagicNumber(m_magic);
       m_trade.SetDeviationInPoints(10);
-      m_trade.SetTypeFilling(ORDER_FILLING_FOK);
+      // FIX: query broker-supported filling mode
+      int filling = (int)SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
+      ENUM_ORDER_TYPE_FILLING fill_mode = ORDER_FILLING_RETURN;
+      if((filling & 1) != 0)      fill_mode = ORDER_FILLING_FOK;
+      else if((filling & 2) != 0) fill_mode = ORDER_FILLING_IOC;
+      m_trade.SetTypeFilling(fill_mode);
 
       return true;
    }

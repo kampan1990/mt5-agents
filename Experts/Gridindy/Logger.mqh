@@ -1,6 +1,6 @@
-//+------------------------------------------------------------------+
+﻿//+------------------------------------------------------------------+
 //| Logger.mqh                                                        |
-//| GridADXEMARSI EA                                                  |
+//| Gridindy EA                                                  |
 //| Version: 1.0.0                                                    |
 //| Created: 2026-06-14                                               |
 //+------------------------------------------------------------------+
@@ -13,8 +13,9 @@
 class CLogger
 {
 private:
-   string m_ea_name;
-   bool   m_verbose;
+   string   m_ea_name;
+   bool     m_verbose;
+   datetime m_last_dash_time;
 
    //--- Internal helper: build timestamp prefix
    string Timestamp()
@@ -34,8 +35,9 @@ public:
    //  @param verbose   when false, DEBUG lines are suppressed
    void Init(string ea_name, bool verbose)
    {
-      m_ea_name = ea_name;
-      m_verbose = verbose;
+      m_ea_name       = ea_name;
+      m_verbose       = verbose;
+      m_last_dash_time = 0;
    }
 
    //--- General-purpose informational message
@@ -106,12 +108,16 @@ public:
    //  @param recovery_count   number of recovery orders placed so far
    //  @param total_profit     running P&L of all managed positions
    //  @param drawdown_pct     current drawdown from peak equity (%)
+   // FIX: throttle to 1 second — prevents log explosion on fast tick symbols
    void PrintDashboard(int    state,
                        int    grid_count,
                        int    recovery_count,
                        double total_profit,
                        double drawdown_pct)
    {
+      if(TimeCurrent() - m_last_dash_time < 1) return;
+      m_last_dash_time = TimeCurrent();
+
       string state_name;
       switch(state)
       {

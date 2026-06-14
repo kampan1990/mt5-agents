@@ -1,8 +1,7 @@
 //+------------------------------------------------------------------+
 //| GridManager.mqh                                                   |
-//| GridADXEMARSI EA                                                  |
-//| Version: 1.0.0                                                    |
-//| Created: 2026-06-14                                               |
+//| Gridindy EA                                                       |
+//| Version: 1.1.0                                                    |
 //+------------------------------------------------------------------+
 #ifndef GRIDMANAGER_MQH
 #define GRIDMANAGER_MQH
@@ -28,21 +27,29 @@ struct SOrderRecord
 class CGridManager
 {
 private:
-   SOrderRecord    m_orders[];       // in-memory order register
-   int             m_order_count;    // current used slots in m_orders[]
-   double          m_grid_distance;  // distance between grid levels (points)
+   SOrderRecord    m_orders[];
+   int             m_order_count;
+   double          m_grid_distance;
    int             m_max_grid_orders;
    double          m_base_lot;
    long            m_magic;
    string          m_symbol;
-   double          m_last_grid_price;    // price at which last grid order was opened
-   ENUM_ORDER_TYPE m_grid_direction;     // direction of the base order
-   bool            m_opening_order;      // reentrancy guard
+   double          m_last_grid_price;
+   ENUM_ORDER_TYPE m_grid_direction;
+   bool            m_opening_order;
 
-   CTrade          m_trade;             // MQL5 trade helper
+   CTrade          m_trade;
+
+   // Query broker-supported filling mode instead of assuming FOK
+   ENUM_ORDER_TYPE_FILLING GetFillingMode()
+   {
+      int filling = (int)SymbolInfoInteger(m_symbol, SYMBOL_FILLING_MODE);
+      if((filling & 1) != 0) return ORDER_FILLING_FOK;
+      if((filling & 2) != 0) return ORDER_FILLING_IOC;
+      return ORDER_FILLING_RETURN;
+   }
 
 public:
-   //--- Constructor
    CGridManager()
    {
       m_order_count     = 0;
@@ -56,13 +63,6 @@ public:
       ArrayResize(m_orders, 0);
    }
 
-   //--- Initialise the grid manager.
-   //  @param grid_distance    distance in points between grid levels
-   //  @param max_grid_orders  hard cap on the number of grid (non-recovery) layers
-   //  @param base_lot         lot for the first order (subsequent ones match)
-   //  @param magic            EA magic number
-   //  @param symbol           trading symbol
-   //  @return true always
    bool Init(double grid_distance,
              int    max_grid_orders,
              double base_lot,
@@ -77,16 +77,11 @@ public:
 
       m_trade.SetExpertMagicNumber(m_magic);
       m_trade.SetDeviationInPoints(10);
-      m_trade.SetTypeFilling(ORDER_FILLING_FOK);
+      m_trade.SetTypeFilling(GetFillingMode());  // FIX: query broker mode
 
       return true;
    }
 
-   //--- Open the first order of a new grid sequence.
-   //  @param type       ORDER_TYPE_BUY or ORDER_TYPE_SELL
-   //  @param lot        volume to open
-   //  @param sl_points  stop-loss distance from open price in points
-   //  @return true if the order was accepted by the server
    bool OpenBaseOrder(ENUM_ORDER_TYPE type, double lot, double sl_points)
    {
       if(m_opening_order) return false;
@@ -106,7 +101,7 @@ public:
 
       sl = NormalizeDouble(sl, (int)SymbolInfoInteger(m_symbol, SYMBOL_DIGITS));
 
-      string comment = StringFormat("GADX_GRID_%d", m_order_count);
+      string comment = StringFormat("GINDY_GRID_%d", m_order_count);
       ulong ticket = SendOrder(type, lot, sl, comment);
 
       m_opening_order = false;
@@ -128,18 +123,13 @@ public:
       return true;
    }
 
-   //--- Update grid distance dynamically (called each tick by ATR logic)
    void SetGridDistance(double dist_points) { m_grid_distance = dist_points; }
    double GetGridDistance()                 { return m_grid_distance; }
 
-   //--- Decide whether a new grid layer should be opened.
-   //  Condition: price has moved at least grid_distance points away from
-   //  the last opened grid price, in the direction of the grid.
-   //  @return true when another layer is warranted
    bool ShouldExpandGrid()
    {
-      if(m_order_count == 0)          return false;
-      if(m_last_grid_price <= 0.0)    return false;
+      if(m_order_count == 0)       return false;
+      if(m_last_grid_price <= 0.0) return false;
 
       double bid = SymbolInfoDouble(m_symbol, SYMBOL_BID);
       double ask = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
@@ -150,9 +140,6 @@ public:
          return (bid <= m_last_grid_price - m_grid_distance * _Point);
    }
 
-   //--- Open an additional grid layer at the next level.
-   //  @param sl_points  stop-loss in points from execution price
-   //  @return true on success
    bool ExpandGrid(double sl_points)
    {
       if(m_opening_order) return false;
@@ -174,12 +161,11 @@ public:
 
       sl = NormalizeDouble(sl, (int)SymbolInfoInteger(m_symbol, SYMBOL_DIGITS));
 
-      // Count only non-recovery orders for the sequence label
       int grid_seq = 0;
       for(int i = 0; i < m_order_count; i++)
          if(!m_orders[i].is_recovery) grid_seq++;
 
-      string comment = StringFormat("GADX_GRID_%d", grid_seq);
+      string comment = StringFormat("GINDY_GRID_%d", grid_seq);
       ulong ticket = SendOrder(m_grid_direction, m_base_lot, sl, comment);
 
       m_opening_order = false;
@@ -200,7 +186,6 @@ public:
       return true;
    }
 
-   //--- Returns true when the grid cannot accept any more layers.
    bool IsGridFull()
    {
       int count = 0;
@@ -209,13 +194,8 @@ public:
       return (count >= m_max_grid_orders);
    }
 
-   //--- Returns true when at least one managed position is still open.
-   bool HasActiveOrders()
-   {
-      return (m_order_count > 0);
-   }
+   bool HasActiveOrders()   { return (m_order_count > 0); }
 
-   //--- Total P&L (profit + swap) of all positions whose magic matches.
    double GetTotalProfit()
    {
       double total = 0.0;
@@ -223,15 +203,13 @@ public:
       {
          ulong ticket = PositionGetTicket(i);
          if(ticket == 0) continue;
-         if(PositionGetInteger(POSITION_MAGIC)        != m_magic)  continue;
-         if(PositionGetString(POSITION_SYMBOL)        != m_symbol) continue;
-         total += PositionGetDouble(POSITION_PROFIT) +
-                  PositionGetDouble(POSITION_SWAP);
+         if(PositionGetInteger(POSITION_MAGIC) != m_magic)  continue;
+         if(PositionGetString(POSITION_SYMBOL) != m_symbol) continue;
+         total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       }
       return total;
    }
 
-   //--- Volume-weighted average entry price of all positions in m_orders[].
    double GetAveragePriceWeighted()
    {
       double sum_price_lot = 0.0;
@@ -245,14 +223,10 @@ public:
       return sum_price_lot / sum_lot;
    }
 
-   //--- Accessors
-   int             GetOrderCount()     { return m_order_count; }
-   ENUM_ORDER_TYPE GetGridDirection()  { return m_grid_direction; }
-   double          GetLastGridPrice()  { return m_last_grid_price; }
+   int             GetOrderCount()    { return m_order_count; }
+   ENUM_ORDER_TYPE GetGridDirection() { return m_grid_direction; }
+   double          GetLastGridPrice() { return m_last_grid_price; }
 
-   //--- Copy current order records into caller-provided array.
-   //  @param out    destination array (will be resized)
-   //  @param count  receives the number of records copied
    void GetOrders(SOrderRecord &out[], int &count)
    {
       count = m_order_count;
@@ -261,7 +235,6 @@ public:
          out[i] = m_orders[i];
    }
 
-   //--- Append an order record to the internal register.
    void AddOrderRecord(SOrderRecord &rec)
    {
       ArrayResize(m_orders, m_order_count + 1);
@@ -269,15 +242,12 @@ public:
       m_order_count++;
    }
 
-   //--- Remove a record by ticket (linear scan, order is not preserved).
-   //  @return true if the ticket was found and removed
    bool RemoveOrderRecord(ulong ticket)
    {
       for(int i = 0; i < m_order_count; i++)
       {
          if(m_orders[i].ticket == ticket)
          {
-            // Overwrite with last element and shrink
             m_orders[i] = m_orders[m_order_count - 1];
             m_order_count--;
             ArrayResize(m_orders, m_order_count);
@@ -287,15 +257,16 @@ public:
       return false;
    }
 
-   //--- Reconcile in-memory records with live server positions.
-   //  Removes records for positions that are no longer open.
+   // FIX: log when positions are removed (SL hit, manual close, etc.)
    void SyncWithServer()
    {
       for(int i = m_order_count - 1; i >= 0; i--)
       {
          if(!PositionSelectByTicket(m_orders[i].ticket))
          {
-            // Position closed externally; remove local record
+            Print("GridManager.SyncWithServer: position #", m_orders[i].ticket,
+                  " (", EnumToString(m_orders[i].type), " lot=", m_orders[i].lot,
+                  ") no longer open — removed from register");
             m_orders[i] = m_orders[m_order_count - 1];
             m_order_count--;
             ArrayResize(m_orders, m_order_count);
@@ -303,8 +274,6 @@ public:
       }
    }
 
-   //--- Close every managed position at market.
-   //  @param reason  logged as comment
    void CloseAll(string reason)
    {
       for(int i = m_order_count - 1; i >= 0; i--)
@@ -312,24 +281,16 @@ public:
          ulong ticket = m_orders[i].ticket;
          if(PositionSelectByTicket(ticket))
          {
-            double profit = PositionGetDouble(POSITION_PROFIT) +
-                            PositionGetDouble(POSITION_SWAP);
+            double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
             if(!m_trade.PositionClose(ticket))
-            {
-               Print("GridManager.CloseAll: failed to close #", ticket,
-                     "  error=", GetLastError());
-            }
+               Print("GridManager.CloseAll: failed to close #", ticket, "  error=", GetLastError());
             else
-            {
-               Print("GridManager.CloseAll: closed #", ticket,
-                     "  profit=", profit, "  reason=", reason);
-            }
+               Print("GridManager.CloseAll: closed #", ticket, "  profit=", profit, "  reason=", reason);
          }
       }
       Reset();
    }
 
-   //--- Reset all internal state (call after CloseAll or when returning to IDLE).
    void Reset()
    {
       m_order_count     = 0;
@@ -339,18 +300,25 @@ public:
    }
 
 private:
-   //--- Send a market order using CTrade and return the position ticket.
-   //  Returns 0 on failure.
-   //  @param type     ORDER_TYPE_BUY or ORDER_TYPE_SELL
-   //  @param lot      volume
-   //  @param sl       absolute stop-loss price
-   //  @param comment  order comment (max 31 chars)
    ulong SendOrder(ENUM_ORDER_TYPE type, double lot, double sl, string comment)
    {
-      // Validate SL
       if(sl <= 0.0)
       {
          Print("GridManager.SendOrder: invalid SL (", sl, ") — order rejected");
+         return 0;
+      }
+
+      // FIX: validate SL distance against broker stop level
+      double price_now = (type == ORDER_TYPE_BUY)
+                         ? SymbolInfoDouble(m_symbol, SYMBOL_ASK)
+                         : SymbolInfoDouble(m_symbol, SYMBOL_BID);
+      long   stop_level = SymbolInfoInteger(m_symbol, SYMBOL_TRADE_STOPS_LEVEL);
+      double min_dist   = (stop_level + 1) * _Point;
+      double sl_dist    = (type == ORDER_TYPE_BUY) ? (price_now - sl) : (sl - price_now);
+      if(sl_dist < min_dist)
+      {
+         Print("GridManager.SendOrder: SL too close — ", sl_dist / _Point,
+               " pts < stop_level=", stop_level, " pts, order rejected");
          return 0;
       }
 
@@ -363,12 +331,12 @@ private:
       if(!ok)
       {
          Print("GridManager.SendOrder: CTrade failed, retcode=",
-               m_trade.ResultRetcode(),
-               "  comment=", m_trade.ResultComment());
+               m_trade.ResultRetcode(), "  comment=", m_trade.ResultComment());
          return 0;
       }
 
-      return m_trade.ResultDeal();
+      // FIX: ResultOrder() returns position ticket; ResultDeal() returns deal ticket
+      return m_trade.ResultOrder();
    }
 };
 
