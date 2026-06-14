@@ -1,8 +1,7 @@
 //+------------------------------------------------------------------+
 //| TrendFilter.mqh                                                   |
-//| GridADXEMARSI EA                                                  |
-//| Version: 1.0.0                                                    |
-//| Created: 2026-06-14                                               |
+//| Gridindy EA                                                       |
+//| Version: 1.1.0                                                    |
 //+------------------------------------------------------------------+
 #ifndef TRENDFILTER_MQH
 #define TRENDFILTER_MQH
@@ -10,9 +9,9 @@
 //+------------------------------------------------------------------+
 //| CTrendFilter — ADX + EMA + RSI composite trend detector          |
 //|                                                                    |
-//| Rules:                                                             |
-//|   IsTrendUp()   = ADX > threshold  AND  Ask > EMA  AND  RSI > 50 |
-//|   IsTrendDown() = ADX > threshold  AND  Bid < EMA  AND  RSI < 50 |
+//| Trend direction is evaluated ONCE per tick in Update() using      |
+//| mid-price to avoid Ask/Bid dead-zone where both sides can be true |
+//| simultaneously when spread is wide.                               |
 //+------------------------------------------------------------------+
 class CTrendFilter
 {
@@ -28,16 +27,19 @@ private:
    int             m_rsi_period;
    int             m_atr_period;
 
-   double          m_adx_value;   // latest main ADX line value
-   double          m_ema_value;   // latest EMA value
-   double          m_rsi_value;   // latest RSI value
-   double          m_atr_value;   // latest ATR value (price units)
+   double          m_adx_value;
+   double          m_ema_value;
+   double          m_rsi_value;
+   double          m_atr_value;
+
+   // FIX: cache direction once per tick — prevents Ask/Bid dead-zone inconsistency
+   bool            m_has_trend;
+   ENUM_ORDER_TYPE m_trend_dir;
 
    string          m_symbol;
    ENUM_TIMEFRAMES m_tf;
 
 public:
-   //--- Constructor: zero-initialise handles so Deinit is safe before Init
    CTrendFilter()
    {
       m_adx_handle    = INVALID_HANDLE;
@@ -48,6 +50,8 @@ public:
       m_ema_value     = 0.0;
       m_rsi_value     = 0.0;
       m_atr_value     = 0.0;
+      m_has_trend     = false;
+      m_trend_dir     = ORDER_TYPE_BUY;
       m_adx_period    = 14;
       m_adx_threshold = 25.0;
       m_ema_period    = 200;
@@ -55,14 +59,6 @@ public:
       m_atr_period    = 14;
    }
 
-   //--- Initialise indicator handles
-   //  @param adx_period      ADX smoothing period
-   //  @param adx_threshold   minimum ADX value to classify as trending
-   //  @param ema_period      EMA period for price vs. average filter
-   //  @param rsi_period      RSI period for momentum confirmation
-   //  @param symbol          symbol to attach indicators to
-   //  @param tf              timeframe to attach indicators to
-   //  @return true on success, false if any handle is invalid
    bool Init(int             adx_period,
              double          adx_threshold,
              int             ema_period,
@@ -110,7 +106,6 @@ public:
       return true;
    }
 
-   //--- Release indicator handles
    void Deinit()
    {
       if(m_adx_handle != INVALID_HANDLE) { IndicatorRelease(m_adx_handle); m_adx_handle = INVALID_HANDLE; }
@@ -119,15 +114,11 @@ public:
       if(m_atr_handle != INVALID_HANDLE) { IndicatorRelease(m_atr_handle); m_atr_handle = INVALID_HANDLE; }
    }
 
-   //--- Refresh cached indicator values from the terminal buffer
-   //  Must be called once per tick before any IsTrendUp/IsTrendDown check.
-   //  @return true if all three values were read successfully
+   //--- Refresh indicator values and evaluate trend direction ONCE per tick.
+   //    FIX: uses mid-price for EMA comparison to eliminate Ask/Bid dead-zone.
    bool Update()
    {
-      double adx_buf[1];
-      double ema_buf[1];
-      double rsi_buf[1];
-      double atr_buf[1];
+      double adx_buf[1], ema_buf[1], rsi_buf[1], atr_buf[1];
 
       if(CopyBuffer(m_adx_handle, 0, 0, 1, adx_buf) != 1) return false;
       if(CopyBuffer(m_ema_handle, 0, 0, 1, ema_buf) != 1) return false;
@@ -139,45 +130,41 @@ public:
       m_rsi_value = rsi_buf[0];
       m_atr_value = atr_buf[0];
 
+      // Use mid-price — single reference point, no dead-zone between Ask and Bid
+      double mid = (SymbolInfoDouble(m_symbol, SYMBOL_ASK) +
+                    SymbolInfoDouble(m_symbol, SYMBOL_BID)) / 2.0;
+
+      bool adx_ok = (m_adx_value > m_adx_threshold);
+
+      m_has_trend = false;
+      if(adx_ok && mid > m_ema_value && m_rsi_value > 50.0)
+      {
+         m_has_trend = true;
+         m_trend_dir = ORDER_TYPE_BUY;
+      }
+      else if(adx_ok && mid < m_ema_value && m_rsi_value < 50.0)
+      {
+         m_has_trend = true;
+         m_trend_dir = ORDER_TYPE_SELL;
+      }
+
       return true;
    }
 
-   //--- True when ADX shows a trend AND price is above EMA AND RSI > 50
-   bool IsTrendUp()
-   {
-      double ask = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
-      return (m_adx_value > m_adx_threshold) &&
-             (ask         > m_ema_value)     &&
-             (m_rsi_value > 50.0);
-   }
+   //--- Returns true only when ADX confirms a clear directional trend
+   bool HasTrend() { return m_has_trend; }
 
-   //--- True when ADX shows a trend AND price is below EMA AND RSI < 50
-   bool IsTrendDown()
-   {
-      double bid = SymbolInfoDouble(m_symbol, SYMBOL_BID);
-      return (m_adx_value > m_adx_threshold) &&
-             (bid         < m_ema_value)     &&
-             (m_rsi_value < 50.0);
-   }
+   //--- Returns the cached direction from the last Update() call.
+   //    Always check HasTrend() before relying on this value.
+   ENUM_ORDER_TYPE GetTrendDirection() { return m_trend_dir; }
 
-   //--- True when any directional trend is detected
-   bool HasTrend()
-   {
-      return IsTrendUp() || IsTrendDown();
-   }
+   bool IsTrendUp()   { return m_has_trend && m_trend_dir == ORDER_TYPE_BUY; }
+   bool IsTrendDown() { return m_has_trend && m_trend_dir == ORDER_TYPE_SELL; }
 
-   //--- Returns ORDER_TYPE_BUY when uptrend, ORDER_TYPE_SELL otherwise.
-   //  Caller should check HasTrend() before relying on this value.
-   ENUM_ORDER_TYPE GetTrendDirection()
-   {
-      return IsTrendUp() ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-   }
-
-   //--- Accessors for the last cached indicator values
    double GetADX() { return m_adx_value; }
    double GetEMA() { return m_ema_value; }
    double GetRSI() { return m_rsi_value; }
-   double GetATR() { return m_atr_value; }  // ATR in price units (e.g. 1.5 USD for XAUUSD)
+   double GetATR() { return m_atr_value; }
 };
 
 #endif // TRENDFILTER_MQH
