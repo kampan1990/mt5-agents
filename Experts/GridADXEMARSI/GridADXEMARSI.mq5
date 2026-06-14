@@ -15,6 +15,7 @@
 #include "GridManager.mqh"
 #include "RecoveryManager.mqh"
 #include "TrailingManager.mqh"
+#include "Dashboard.mqh"
 
 //+------------------------------------------------------------------+
 //| Input Parameters                                                  |
@@ -77,6 +78,7 @@ CRiskManager     g_risk;
 CGridManager     g_grid;
 CRecoveryManager g_recovery;
 CTrailingManager g_trailer;
+CDashboard       g_dash;
 
 ENUM_EA_STATE    g_state = STATE_IDLE;
 
@@ -238,6 +240,7 @@ int OnInit()
    }
 
    g_state = STATE_IDLE;
+   g_dash.Init();
    g_logger.Info(StringFormat("OnInit: OK  symbol=%s  magic=%I64d  state=IDLE",
                               _Symbol, InpMagicNumber));
    return INIT_SUCCEEDED;
@@ -249,6 +252,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    g_trend.Deinit();
+   g_dash.Deinit();
    g_logger.Info(StringFormat("OnDeinit: reason=%d", reason));
 }
 
@@ -475,13 +479,20 @@ void OnTick()
    // ----------------------------------------------------------------
    // Step 10 — dashboard (every tick)
    // ----------------------------------------------------------------
-   g_logger.PrintDashboard((int)g_state,
-                            g_grid.GetOrderCount(),
-                            g_recovery.GetRecoveryCount(),
-                            g_grid.GetTotalProfit(),
-                            g_risk.GetCurrentDrawdownPct());
-   if(InpVerboseLog)
-      g_logger.Info(StringFormat("ATR=%.5f  gDist=%.1f pts  rDist=%.1f pts  ADX=%.2f  RSI=%.2f",
-                                 g_trend.GetATR(), g_dyn_grid_dist, g_dyn_recovery_dist,
-                                 g_trend.GetADX(), g_trend.GetRSI()));
+   // ── Visual dashboard (updates chart objects every tick) ─────────
+   g_dash.Update(
+      (int)g_state,
+      g_trend.GetADX(),    InpAdxThreshold,
+      g_trend.GetRSI(),
+      g_trend.GetEMA(),
+      g_trend.GetATR(),
+      g_grid.HasActiveOrders() ? (int)g_grid.GetGridDirection() : -1,
+      g_grid.GetOrderCount(),  InpMaxGridOrders,
+      g_grid.GetGridDistance(),
+      g_recovery.GetRecoveryCount(), InpMaxRecoveryOrders,
+      g_recovery.GetRecoveryDistance(),
+      g_grid.GetTotalProfit(),
+      InpProfitTarget,
+      g_risk.GetCurrentDrawdownPct()
+   );
 }
