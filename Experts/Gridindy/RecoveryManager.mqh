@@ -110,15 +110,18 @@ public:
       if(m_grid_mgr == NULL) return false;
       if(!CanRecover())      return false;
 
-      // Recovery direction is OPPOSITE to grid (hedge)
-      ENUM_ORDER_TYPE grid_dir     = m_grid_mgr.GetGridDirection();
-      ENUM_ORDER_TYPE recovery_dir = (grid_dir == ORDER_TYPE_BUY)
-                                     ? ORDER_TYPE_SELL
-                                     : ORDER_TYPE_BUY;
+      // ไม้แรก: ตรงข้าม grid เสมอ / ไม้ถัดไป: สลับจากทิศก่อนหน้า
+      ENUM_ORDER_TYPE recovery_dir;
+      if(m_recovery_count == 0)
+         recovery_dir = (m_grid_mgr.GetGridDirection() == ORDER_TYPE_BUY)
+                        ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+      else
+         recovery_dir = (m_last_recovery_type == ORDER_TYPE_SELL)
+                        ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
 
-      // Exponential lot scaling per recovery layer
+      // Lot คูณตั้งแต่ไม้แรก: recovery 1 = base×multi, recovery 2 = base×multi², ...
       double lot = base_lot;
-      for(int i = 0; i < m_recovery_count; i++)
+      for(int i = 0; i <= m_recovery_count; i++)
          lot *= m_multiplier;
 
       // Normalise lot
@@ -202,17 +205,13 @@ public:
       return true;
    }
 
-   //--- Continue recovery when price moves FURTHER in the adverse direction
+   //--- เปิด recovery ไม้ถัดไปเมื่อราคา "กลับทิศ" ผ่าน recovery_distance จากไม้ล่าสุด
    //
-   //   If recovery is SELL (BUY grid losing, price falling):
-   //     add another SELL when price falls another recovery_distance
-   //     → bid < last_recovery_price - distance  (price keeps falling)
+   //   ไม้ล่าสุดเป็น SELL (BUY grid + ราคาลง):
+   //     ถ้าราคากลับขึ้น ask > last_recovery_price + distance → เปิด BUY ต่อไป
    //
-   //   If recovery is BUY (SELL grid losing, price rising):
-   //     add another BUY when price rises another recovery_distance
-   //     → ask > last_recovery_price + distance  (price keeps rising)
-   //
-   // FIX: previous logic was inverted — triggered on price reversal, not continuation
+   //   ไม้ล่าสุดเป็น BUY (SELL grid + ราคาขึ้น):
+   //     ถ้าราคากลับลง bid < last_recovery_price - distance → เปิด SELL ต่อไป
    bool ShouldContinueRecovery()
    {
       if(m_recovery_count == 0)        return false;
@@ -220,15 +219,15 @@ public:
 
       if(m_last_recovery_type == ORDER_TYPE_SELL)
       {
-         // SELL recovery: continue when price falls further
-         double bid = SymbolInfoDouble(m_symbol, SYMBOL_BID);
-         return (bid < m_last_recovery_price - m_recovery_distance * _Point);
+         // ไม้ล่าสุด SELL → ราคากลับขึ้นเกิน rec_dist → เปิด BUY
+         double ask = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
+         return (ask > m_last_recovery_price + m_recovery_distance * _Point);
       }
       else
       {
-         // BUY recovery: continue when price rises further
-         double ask = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
-         return (ask > m_last_recovery_price + m_recovery_distance * _Point);
+         // ไม้ล่าสุด BUY → ราคากลับลงเกิน rec_dist → เปิด SELL
+         double bid = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+         return (bid < m_last_recovery_price - m_recovery_distance * _Point);
       }
    }
 

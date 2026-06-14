@@ -481,9 +481,8 @@ void OnTick()
    // Step 7 — อัพเดท indicator cache
    if(!g_trend.Update())                               { DrawDashboard(); return; }
 
-   // Step 7b — คำนวณระยะ ATR เฉพาะตอนรอสัญญาณ
-   if(g_state == STATE_IDLE)
-      UpdateATRDistances();
+   // Step 7b — คำนวณระยะ ATR ทุก tick (dynamic ตามความผันผวน)
+   UpdateATRDistances();
 
    // Step 8 — sync ไม้กับ server
    g_grid.SyncWithServer();
