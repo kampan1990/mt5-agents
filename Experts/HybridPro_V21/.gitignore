@@ -1,0 +1,5 @@
+*.ex5
+__pycache__/
+*.log
+opt_error.txt
+opt_output.txt
