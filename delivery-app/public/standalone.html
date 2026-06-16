@@ -204,7 +204,10 @@ input:checked+.tgt:before{transform:translateX(20px)}
   <div class="ph" style="background:#333"><h1>⚙️ ตั้งค่า</h1></div>
   <div class="card" style="margin-top:16px">
     <div class="ct">ข้อมูลส่วนตัว</div>
-    <div class="fs"><div class="fg"><label>ชื่อคนขับ</label><input type="text" id="sname" placeholder="ชื่อของคุณ"></div></div>
+    <div class="fs">
+      <div class="fg"><label>ชื่อพนักงานขับรถ</label><input type="text" id="sname" placeholder="ชื่อ-นามสกุล"></div>
+      <div class="fg"><label>📧 อีเมล์หัวหน้า (ผู้รับรายงาน)</label><input type="email" id="sboss" placeholder="boss@example.com"></div>
+    </div>
   </div>
   <div class="card">
     <div class="ct">⛽ เรทราคาน้ำมัน (NITORI)</div>
@@ -360,7 +363,8 @@ function loadHome(){
       <div class="ir itot"><span class="lbl">รายได้วันนี้</span><span class="val" style="color:var(--g);font-size:18px">${inc.tot.toLocaleString()} ฿</span></div>`;
     ta.innerHTML=`
       <button class="btn btn-o btn-sm" onclick="editD(${d.id})">✏️ แก้ไข</button>
-      <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 แชร์ LINE</button>`;
+      <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 LINE</button>
+      <button class="btn btn-w btn-sm" onclick="emailDay('${today}')">📧 อีเมล์</button>`;
   }
   // Month stats
   const now=new Date();
@@ -547,9 +551,10 @@ function showModal(id){
     <div class="inet" style="margin:12px 0"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
     ${d.notes?`<p style="font-size:13px;color:var(--mu);margin-bottom:12px">📝 ${d.notes}</p>`:''}
     ${photos.length?`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:12px">${photos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div>`:''}
-    <div class="brow">
+    <div class="brow" style="flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="editD(${id})">✏️</button>
-      <button class="btn btn-p btn-sm" onclick="shareDay('${d.date}')">📤 แชร์</button>
+      <button class="btn btn-p btn-sm" onclick="shareDay('${d.date}')">📤 LINE</button>
+      <button class="btn btn-w btn-sm" onclick="emailDay('${d.date}')">📧</button>
       <button class="btn btn-d btn-sm" onclick="delD(${id})">🗑️</button>
     </div>`;
   document.getElementById('modal').classList.add('active');
@@ -597,24 +602,39 @@ function loadDR(){
   const col=CFG.fuel||'r5';
   const colLabel={'r0':'24-27','r1':'27-30','r2':'30-33','r3':'33-36','r4':'36-39','r5':'39-42'}[col];
   const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'ไม่มี';
+  const driver=CFG.name||'';
   area.innerHTML=d.is_holiday?
-    `<div class="card" style="margin-top:8px"><div style="text-align:center;padding:32px"><span style="font-size:48px">🏖️</span><p style="margin-top:12px;font-weight:600">วันหยุด</p></div></div>`:
     `<div class="card" style="margin-top:8px">
       <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:16px">
-        <p style="font-weight:700;font-size:16px">📦 รายงานจัดส่ง ${fmtTH(date)}</p>
-        <p style="opacity:.8;font-size:12px">ราคาน้ำมัน ${colLabel} บาท/ลิตร</p>
+        <p style="font-weight:700;font-size:16px">📋 รายงานประจำวัน ${fmtTH(date)}</p>
+        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 ${driver}</p>`:''}
       </div>
-      <div class="ir"><span class="lbl">เขต / จังหวัด</span><span class="val">${d.zone||'-'} ${d.province?'/ '+d.province:''}</span></div>
-      <div class="ir"><span class="lbl">จำนวนจุด</span><span class="val">${d.point_count||0} จุด</span></div>
+      <div style="text-align:center;padding:24px"><span style="font-size:48px">🏖️</span><p style="margin-top:8px;font-weight:600">วันหยุด</p></div>
+      <div style="padding:0 16px 16px;display:flex;gap:8px">
+        <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
+        <button class="btn btn-w btn-sm" onclick="emailDay('${date}')">📧 ส่งอีเมล์</button>
+      </div>
+    </div>`:
+    `<div class="card" style="margin-top:8px">
+      <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:16px">
+        <p style="font-weight:700;font-size:16px">📦 รายงานประจำวัน ${fmtTH(date)}</p>
+        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 พนักงานขับรถ: ${driver}</p>`:''}
+      </div>
+      <div class="ir"><span class="lbl">เขต / จังหวัด</span><span class="val">${d.zone||'-'}${d.province?' / '+d.province:''}</span></div>
+      <div class="ir"><span class="lbl">จำนวนจุดส่ง</span><span class="val">${d.point_count||0} จุด</span></div>
       <div class="ir"><span class="lbl">ระยะทาง</span><span class="val">${d.distance||0} กม.</span></div>
-      <div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${flTxt}</span></div>
-      <div class="ir"><span class="lbl">เหมาจ่าย (${d.distance||0} กม.)</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
-      <div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${inc.fl.toLocaleString()} ฿</span></div>
-      <div class="ir"><span class="lbl">ค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
-      <div class="inet" style="margin:12px 16px"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
-      ${d.notes?`<p style="padding:0 16px 12px;font-size:13px;color:var(--mu)">📝 ${d.notes}</p>`:''}
-    </div>
-    <div style="padding:0 16px 8px"><button class="btn btn-p" onclick="shareDay('${date}')">📤 แชร์สรุปวันนี้ทาง LINE</button></div>`;
+      <div class="ir"><span class="lbl">บิลค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
+      ${(d.floor_deliveries||[]).length?`<div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${flTxt}</span></div>`:''}
+      ${d.notes?`<div class="ir"><span class="lbl">หมายเหตุ</span><span class="val">${d.notes}</span></div>`:''}
+      <div style="height:1px;background:var(--bdr);margin:4px 16px"></div>
+      <div class="ir"><span class="lbl" style="color:var(--mu)">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
+      ${inc.fl?`<div class="ir"><span class="lbl" style="color:var(--mu)">ยกชั้น</span><span class="val">${inc.fl.toLocaleString()} ฿</span></div>`:''}
+      <div class="inet" style="margin:12px 16px 8px"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
+      <div style="padding:0 16px 16px;display:flex;gap:8px">
+        <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
+        <button class="btn btn-w btn-sm" onclick="emailDay('${date}')">📧 ส่งอีเมล์</button>
+      </div>
+    </div>`;
 }
 
 function loadSum(){
@@ -647,8 +667,9 @@ function loadSum(){
       <div class="ir" style="color:var(--r)"><span class="lbl">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</span><span class="val">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
       <div class="inet" style="margin:12px 16px 16px"><span>รับสุทธิ</span><span>${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
     </div>
-    <div style="padding:0 16px 16px">
-      <button class="btn btn-g" onclick="shareSum('${start}','${end}')">📤 แชร์สรุปทาง LINE</button>
+    <div style="padding:0 16px 16px;display:flex;gap:8px">
+      <button class="btn btn-g btn-sm" onclick="shareSum('${start}','${end}')">📤 แชร์ LINE</button>
+      <button class="btn btn-p btn-sm" onclick="pdfSum('${start}','${end}')">📄 ดาวน์โหลด PDF</button>
     </div>`;
 }
 
@@ -657,25 +678,40 @@ function shareDay(date){
   const dels=DB.getDeliveries();
   const d=dels.find(x=>x.date===date);
   if(!d)return;
+  const driver=CFG.name||'';
   let txt;
-  if(d.is_holiday){txt=`📋 ${date}\n🏖️ วันหยุด`;}
-  else{
-    const inc=calcInc(d);
-    const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'ไม่มี';
-    txt=`📦 รายงานจัดส่ง ${date}
+  if(d.is_holiday){
+    txt=`📋 รายงานประจำวัน\nพนักงาน: ${driver}\nวันที่: ${date}\n──────────────────\n🏖️ วันหยุด`;
+  } else {
+    txt=`📦 รายงานประจำวัน
+พนักงานขับรถ: ${driver}
+วันที่: ${fmtTH(date)}
 ──────────────────
-🗺️ เขต: ${d.zone||'-'} ${d.province?'/ '+d.province:''}
-📍 จำนวนจุด: ${d.point_count||0} จุด
+🗺️ เขต/จังหวัด: ${d.zone||'-'}${d.province?' / '+d.province:''}
+📍 จำนวนจุดส่ง: ${d.point_count||0} จุด
 🛣️ ระยะทาง: ${d.distance||0} กม.
-🏢 ยกของขึ้นชั้น: ${flTxt}
-🛣️ ค่าทางด่วน: ${(inc.tl).toLocaleString()} บาท
-──────────────────
-💰 เหมาจ่าย: ${inc.km.toLocaleString()} บาท
-💪 ยกชั้น: ${inc.fl.toLocaleString()} บาท
-🛣️ ด่วน: ${inc.tl.toLocaleString()} บาท
-✅ รวม: ${inc.tot.toLocaleString()} บาท`;
+🧾 บิลค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\n📝 หมายเหตุ: '+d.notes:''}`;
   }
   copyAndShare(txt);
+}
+
+/* ── Email daily report ── */
+function emailDay(date){
+  const dels=DB.getDeliveries();
+  const d=dels.find(x=>x.date===date);
+  if(!d)return;
+  const boss=CFG.boss||'';
+  const driver=CFG.name||'';
+  let subject,body;
+  if(d.is_holiday){
+    subject=`รายงานประจำวัน ${date} - วันหยุด`;
+    body=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${date}\nพนักงานขับรถ: ${driver}\n\nวันหยุด\n\nขอแสดงความนับถือ\n${driver}`;
+  } else {
+    subject=`รายงานประจำวัน ${date} - ${driver}`;
+    body=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${fmtTH(date)}\nพนักงานขับรถ: ${driver}\n\nรายละเอียดงานที่จัดส่ง:\n──────────────────\nเขต/จังหวัด: ${d.zone||'-'}${d.province?' / '+d.province:''}\nจำนวนจุดส่ง: ${d.point_count||0} จุด\nระยะทาง: ${d.distance||0} กิโลเมตร\nบิลค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\nหมายเหตุ: '+d.notes:''}\n\nขอแสดงความนับถือ\n${driver}`;
+  }
+  const mailto=`mailto:${encodeURIComponent(boss)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href=mailto;
 }
 
 function shareSum(start,end){
@@ -690,6 +726,132 @@ function shareSum(start,end){
   const taxAmt=totInc*tax;
   const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\nรวม: ${totInc.toLocaleString()} บาท\nหัก 1%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
   copyAndShare(txt);
+}
+
+/* ── PDF 15-day ── */
+function pdfSum(start,end){
+  const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
+  const tax=parseFloat(CFG.tax||'1')/100;
+  const driver=CFG.name||'................................';
+  let totKm=0,totFl=0,totTl=0,totD=0,totDist=0,totPts=0,holD=0;
+
+  const rows=dels.map((d,i)=>{
+    if(d.is_holiday){holD++;
+      return`<tr style="background:#f5f5f5"><td>${i+1}</td><td>${d.date}</td><td colspan="5" style="text-align:center;color:#999">วันหยุด</td><td>-</td></tr>`;
+    }
+    const inc=calcInc(d);
+    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totD++;
+    totDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
+    const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(',')||'-';
+    return`<tr>
+      <td>${i+1}</td>
+      <td>${d.date}</td>
+      <td>${d.zone||'-'}${d.province?'<br><small>'+d.province+'</small>':''}</td>
+      <td style="text-align:center">${d.point_count||0}</td>
+      <td style="text-align:center">${d.distance||0}</td>
+      <td style="text-align:center">${flTxt}</td>
+      <td style="text-align:right">${inc.tl.toLocaleString()}</td>
+      <td style="text-align:right;font-weight:600">${inc.tot.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+
+  const totInc=totKm+totFl+totTl;
+  const taxAmt=totInc*tax;
+  const net=totInc-taxAmt;
+  const printDate=new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'});
+
+  const html=`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<style>
+  @page{size:A4;margin:20mm 15mm}
+  body{font-family:'Sarabun',Arial,sans-serif;font-size:13px;color:#000;margin:0}
+  h2{text-align:center;font-size:18px;margin-bottom:4px}
+  .sub{text-align:center;font-size:13px;color:#555;margin-bottom:20px}
+  .info{display:flex;justify-content:space-between;margin-bottom:12px;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{background:#1a1a2e;color:#fff;padding:8px 6px;text-align:left;font-size:11px}
+  td{padding:7px 6px;border-bottom:1px solid #eee;vertical-align:top}
+  tr:nth-child(even){background:#fafafa}
+  .totrow td{background:#e8f4fd;font-weight:700;border-top:2px solid #333}
+  .income-box{margin-top:16px;display:flex;justify-content:flex-end}
+  .income-table{width:300px;border-collapse:collapse;font-size:13px}
+  .income-table td{padding:7px 10px;border-bottom:1px solid #eee}
+  .income-table .label{color:#555}
+  .income-table .total{font-weight:800;font-size:15px;background:#1a1a2e;color:#fff}
+  .income-table .net{font-weight:800;font-size:15px;background:#2d7d46;color:#fff}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px;padding-top:16px}
+  .sign-box{text-align:center}
+  .sign-line{border-bottom:1px solid #999;margin-bottom:8px;height:48px}
+  .sign-label{font-size:12px;color:#555}
+  .sign-name{font-size:13px;margin-top:4px;color:#555}
+  @media print{.no-print{display:none}}
+</style></head><body>
+<div class="no-print" style="padding:12px;text-align:center">
+  <button onclick="window.print()" style="padding:10px 24px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-family:inherit">🖨️ พิมพ์ / บันทึก PDF</button>
+  <p style="font-size:12px;color:#888;margin-top:8px">บน iPhone: กด "Share" → "Print" → pinch out to save PDF<br>Android: เลือก "Save as PDF" ใน printer</p>
+</div>
+
+<h2>📋 สรุปรายได้ประจำงวด</h2>
+<div class="sub">บริษัท NITORI · วันที่ ${start} ถึง ${end}</div>
+<div class="info">
+  <span><strong>ชื่อพนักงานขับรถ:</strong> ${driver}</span>
+  <span><strong>วันที่พิมพ์:</strong> ${printDate}</span>
+</div>
+<div class="info">
+  <span>วันวิ่งรวม: <strong>${totD} วัน</strong></span>
+  <span>วันหยุด: <strong>${holD} วัน</strong></span>
+  <span>ระยะทางรวม: <strong>${totDist.toLocaleString()} กม.</strong></span>
+  <span>จุดรวม: <strong>${totPts} จุด</strong></span>
+</div>
+
+<table>
+  <thead><tr>
+    <th width="30">#</th><th width="90">วันที่</th><th>เขต/จังหวัด</th>
+    <th width="45" style="text-align:center">จุด</th>
+    <th width="50" style="text-align:center">กม.</th>
+    <th width="70" style="text-align:center">ยกชั้น</th>
+    <th width="65" style="text-align:right">ด่วน(฿)</th>
+    <th width="75" style="text-align:right">รายได้(฿)</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr class="totrow">
+    <td colspan="3">รวม</td>
+    <td style="text-align:center">${totPts}</td>
+    <td style="text-align:center">${totDist.toLocaleString()}</td>
+    <td></td>
+    <td style="text-align:right">${totTl.toLocaleString()}</td>
+    <td style="text-align:right">${totInc.toLocaleString()}</td>
+  </tr></tfoot>
+</table>
+
+<div class="income-box">
+  <table class="income-table">
+    <tr><td class="label">เหมาจ่ายระยะทาง</td><td style="text-align:right">${totKm.toLocaleString()} ฿</td></tr>
+    <tr><td class="label">ยกของขึ้นชั้น</td><td style="text-align:right">${totFl.toLocaleString()} ฿</td></tr>
+    <tr><td class="label">ค่าทางด่วนรวม</td><td style="text-align:right">${totTl.toLocaleString()} ฿</td></tr>
+    <tr class="total"><td>รวมรายได้</td><td style="text-align:right">${totInc.toLocaleString()} ฿</td></tr>
+    <tr><td class="label" style="color:#c0392b">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</td><td style="text-align:right;color:#c0392b">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</td></tr>
+    <tr class="net"><td>รับสุทธิ</td><td style="text-align:right">${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</td></tr>
+  </table>
+</div>
+
+<div class="sign">
+  <div class="sign-box">
+    <div class="sign-line"></div>
+    <div class="sign-label">ลายเซ็นพนักงานขับรถ</div>
+    <div class="sign-name">(${CFG.name||'................................................'})</div>
+    <div class="sign-name" style="margin-top:4px">วันที่ ..../..../........</div>
+  </div>
+  <div class="sign-box">
+    <div class="sign-line"></div>
+    <div class="sign-label">ลายเซ็นผู้อนุมัติ</div>
+    <div class="sign-name">(.................................................)</div>
+    <div class="sign-name" style="margin-top:4px">วันที่ ..../..../........</div>
+  </div>
+</div>
+</body></html>`;
+
+  const w=window.open('','_blank','width=800,height=900');
+  w.document.write(html);w.document.close();
 }
 
 function copyAndShare(txt){
@@ -707,6 +869,7 @@ function copyAndShare(txt){
 function loadCfg(){
   CFG=DB.getSettings();
   document.getElementById('sname').value=CFG.name||'';
+  document.getElementById('sboss').value=CFG.boss||'';
   document.getElementById('sfuel').value=CFG.fuel||'r5';
   document.getElementById('stax').value=CFG.tax||'1';
   updFuelPrev();
@@ -717,7 +880,12 @@ function updFuelPrev(){
   document.getElementById('fprev').innerHTML=smp.map(r=>`${r.mn}-${r.mx} กม. = <strong>${r[col].toLocaleString()} ฿</strong>`).join(' · ');
 }
 function saveSettings(){
-  CFG={name:document.getElementById('sname').value,fuel:document.getElementById('sfuel').value,tax:document.getElementById('stax').value};
+  CFG={
+    name:document.getElementById('sname').value,
+    boss:document.getElementById('sboss').value,
+    fuel:document.getElementById('sfuel').value,
+    tax:document.getElementById('stax').value
+  };
   DB.saveSettings(CFG);
   toast('✅ บันทึกการตั้งค่าแล้ว','ok');
 }
