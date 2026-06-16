@@ -1,0 +1,7 @@
+# Delivery Database
+delivery.db
+uploads/
+.env
+node_modules/
+delivery.db-shm
+delivery.db-wal

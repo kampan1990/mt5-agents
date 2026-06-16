@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>รายงานส่งงาน NITORI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ─── PAGE: HOME ────────────────────────────────────── -->
+<div id="page-home" class="page active">
+  <div class="page-header" style="background: linear-gradient(135deg,#6c63ff,#574fd6)">
+    <h1>📦 รายงานส่งงาน</h1>
+    <div class="sub" id="home-date">วันนี้</div>
+  </div>
+
+  <!-- Today card -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-title">สรุปวันนี้</div>
+    <div id="today-summary" style="padding:0 16px 16px">
+      <div class="empty">
+        <div class="icon">📋</div>
+        <p>ยังไม่มีข้อมูลวันนี้<br>กด "บันทึก" เพื่อเพิ่มข้อมูล</p>
+      </div>
+    </div>
+    <div style="padding:0 16px 16px; display:flex; gap:8px" id="today-actions" style="display:none">
+    </div>
+  </div>
+
+  <!-- Quick stats -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-month-days">-</div>
+      <div class="stat-label">วันวิ่งเดือนนี้</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-month-income">-</div>
+      <div class="stat-label">รายได้เดือนนี้</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-month-km">-</div>
+      <div class="stat-label">กม. เดือนนี้</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-month-points">-</div>
+      <div class="stat-label">จุดเดือนนี้</div>
+    </div>
+  </div>
+
+  <!-- Recent -->
+  <div class="card">
+    <div class="card-title">รายการล่าสุด</div>
+    <div id="recent-list"><div class="loading">⏳</div></div>
+  </div>
+</div>
+
+<!-- ─── PAGE: ENTRY ────────────────────────────────────── -->
+<div id="page-entry" class="page">
+  <div class="page-header">
+    <h1 id="entry-title">📝 บันทึกงานวันนี้</h1>
+  </div>
+
+  <form id="entry-form">
+    <input type="hidden" id="entry-id">
+
+    <div class="card">
+      <div class="form-section">
+        <!-- Date -->
+        <div class="form-group">
+          <label>📅 วันที่</label>
+          <input type="date" id="field-date" required>
+        </div>
+
+        <!-- Holiday toggle -->
+        <div class="toggle-group" style="padding:0;margin-bottom:16px;border-bottom:none">
+          <div>
+            <div class="toggle-label">🏖️ วันหยุด</div>
+            <div class="toggle-desc">ถ้าวันนี้หยุด ไม่ต้องกรอกข้อมูลอื่น</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="field-holiday" onchange="toggleHolidayFields()">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div id="work-fields">
+      <div class="card">
+        <div class="form-section">
+          <div class="row2">
+            <div class="form-group">
+              <label>🗺️ เขต</label>
+              <input type="text" id="field-zone" placeholder="เช่น บางรัก">
+            </div>
+            <div class="form-group">
+              <label>🏙️ จังหวัด</label>
+              <input type="text" id="field-province" placeholder="เช่น กรุงเทพ">
+            </div>
+          </div>
+          <div class="row2">
+            <div class="form-group">
+              <label>📍 จำนวนจุด</label>
+              <input type="number" id="field-points" placeholder="0" min="0" inputmode="numeric">
+            </div>
+            <div class="form-group">
+              <label>🛣️ ระยะทาง (กม.)</label>
+              <input type="number" id="field-distance" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updateIncomePreview()">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>🛣️ ค่าทางด่วน (บาท)</label>
+            <input type="number" id="field-toll" placeholder="0" min="0" inputmode="numeric" oninput="updateIncomePreview()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Floor deliveries -->
+      <div class="card">
+        <div class="card-title">🏢 ยกของขึ้นชั้น (ชั้น 3+ = 100฿/ชั้น)</div>
+        <div id="floor-list" style="padding:0 16px 8px"></div>
+        <div style="padding:0 16px 16px">
+          <button type="button" class="btn btn-outline btn-sm" onclick="addFloorEntry()">+ เพิ่มรายการ</button>
+        </div>
+      </div>
+
+      <!-- Income preview -->
+      <div class="card" id="income-preview" style="display:none">
+        <div class="card-title">💰 รายได้วันนี้ (ประมาณ)</div>
+        <div id="income-rows"></div>
+      </div>
+
+      <!-- Photos -->
+      <div class="card">
+        <div class="card-title">📸 รูปถ่ายงาน</div>
+        <div id="photo-grid" class="photo-grid">
+          <div class="add-photo-btn" onclick="triggerCamera()">
+            <div class="add-photo-icon">📷</div>
+            <span>ถ่ายรูป</span>
+          </div>
+        </div>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none" onchange="handlePhotos(this)">
+      </div>
+
+      <!-- Notes -->
+      <div class="card">
+        <div class="form-section">
+          <div class="form-group">
+            <label>📝 หมายเหตุ</label>
+            <textarea id="field-notes" placeholder="หมายเหตุเพิ่มเติม..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:0 16px 16px; display:flex; gap:10px">
+      <button type="submit" class="btn btn-primary">💾 บันทึก</button>
+    </div>
+  </form>
+</div>
+
+<!-- ─── PAGE: HISTORY ────────────────────────────────────── -->
+<div id="page-history" class="page">
+  <div class="page-header">
+    <h1>📅 ประวัติงาน</h1>
+  </div>
+  <div class="date-nav">
+    <button onclick="prevMonth()">‹</button>
+    <div class="date-label" id="history-month-label">เดือนนี้</div>
+    <button onclick="nextMonth()">›</button>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div id="history-list"><div class="loading">⏳</div></div>
+  </div>
+</div>
+
+<!-- ─── PAGE: REPORTS ────────────────────────────────────── -->
+<div id="page-reports" class="page">
+  <div class="page-header" style="background:linear-gradient(135deg,#11998e,#2ecc71)">
+    <h1>📊 รายงาน</h1>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchReportTab('daily')">รายวัน</button>
+    <button class="tab-btn" onclick="switchReportTab('summary')">สรุป 15 วัน</button>
+  </div>
+
+  <!-- Daily report -->
+  <div id="tab-daily">
+    <div class="card">
+      <div class="form-section">
+        <div class="form-group">
+          <label>เลือกวันที่</label>
+          <input type="date" id="report-date">
+        </div>
+        <button class="btn btn-primary" onclick="loadDailyReport()">ดูรายงาน</button>
+      </div>
+    </div>
+    <div id="daily-report-area"></div>
+  </div>
+
+  <!-- 15-day summary -->
+  <div id="tab-summary" style="display:none">
+    <div class="card">
+      <div class="form-section">
+        <div class="row2">
+          <div class="form-group">
+            <label>จากวันที่</label>
+            <input type="date" id="summary-start">
+          </div>
+          <div class="form-group">
+            <label>ถึงวันที่</label>
+            <input type="date" id="summary-end">
+          </div>
+        </div>
+        <button class="btn btn-success" onclick="loadSummary()">ดูสรุปรายได้</button>
+      </div>
+    </div>
+    <div id="summary-area"></div>
+  </div>
+</div>
+
+<!-- ─── PAGE: SETTINGS ────────────────────────────────────── -->
+<div id="page-settings" class="page">
+  <div class="page-header" style="background:#333">
+    <h1>⚙️ ตั้งค่า</h1>
+  </div>
+
+  <!-- Profile -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-title">ข้อมูลส่วนตัว</div>
+    <div class="form-section">
+      <div class="form-group">
+        <label>ชื่อคนขับ</label>
+        <input type="text" id="s-driver-name" placeholder="ชื่อของคุณ">
+      </div>
+    </div>
+  </div>
+
+  <!-- Email settings -->
+  <div class="card">
+    <div class="card-title">📧 ตั้งค่าอีเมล์</div>
+    <div class="form-section">
+      <div class="form-group">
+        <label>อีเมล์หัวหน้า (ผู้รับรายงาน)</label>
+        <input type="email" id="s-boss-email" placeholder="boss@example.com">
+      </div>
+      <div class="form-group">
+        <label>อีเมล์ผู้ส่ง (Gmail ของคุณ)</label>
+        <input type="email" id="s-sender-email" placeholder="your@gmail.com">
+      </div>
+      <div class="form-group">
+        <label>Gmail App Password</label>
+        <input type="password" id="s-smtp-pass" placeholder="xxxx xxxx xxxx xxxx">
+        <div class="text-muted mt8">ตั้งใน Gmail: Account → Security → App Password</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fuel range -->
+  <div class="card">
+    <div class="card-title">⛽ เรทราคาน้ำมัน (NITORI)</div>
+    <div class="form-section">
+      <div class="form-group">
+        <label>ราคาน้ำมันปัจจุบัน (บาท/ลิตร)</label>
+        <select id="s-fuel-col" onchange="updateFuelTiers()">
+          <option value="r0">24.01 – 27.00 บาท/ลิตร</option>
+          <option value="r1">27.01 – 30.00 บาท/ลิตร</option>
+          <option value="r2">30.01 – 33.00 บาท/ลิตร</option>
+          <option value="r3">33.01 – 36.00 บาท/ลิตร</option>
+          <option value="r4">36.01 – 39.00 บาท/ลิตร</option>
+          <option value="r5" selected>39.01 – 42.00 บาท/ลิตร</option>
+        </select>
+      </div>
+      <div id="fuel-tier-preview" class="text-muted" style="font-size:13px"></div>
+    </div>
+  </div>
+
+  <!-- Tax -->
+  <div class="card">
+    <div class="card-title">🧾 ภาษี</div>
+    <div class="form-section">
+      <div class="form-group">
+        <label>หัก ณ ที่จ่าย (%)</label>
+        <input type="number" id="s-tax-rate" placeholder="1" min="0" max="100" step="0.5" value="1">
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto reports -->
+  <div class="card">
+    <div class="card-title">🤖 รายงานอัตโนมัติ</div>
+    <div class="toggle-group">
+      <div>
+        <div class="toggle-label">สรุป 15 วันอัตโนมัติ</div>
+        <div class="toggle-desc">ส่งอีเมล์วันที่ 1 และ 16 ของเดือน</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="s-auto-15day">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- LINE Bot -->
+  <div class="card">
+    <div class="card-title">💬 LINE Bot</div>
+    <div class="form-section">
+      <div class="text-muted" style="margin-bottom:12px; font-size:13px">
+        เพื่อเชื่อม LINE Bot:<br>
+        1. ไปที่ LINE Developers Console<br>
+        2. สร้าง Messaging API Channel<br>
+        3. Copy Channel Access Token & Secret<br>
+        4. ใส่ใน .env แล้ว restart server<br>
+        5. ตั้ง Webhook URL: <span id="webhook-url" style="color:var(--primary)">http://SERVER/webhook</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save button -->
+  <div style="padding:16px">
+    <button class="btn btn-primary" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button>
+  </div>
+  <div style="padding:0 16px 16px; text-align:center; color:var(--muted); font-size:12px">
+    v1.0 · NITORI Delivery Report App
+  </div>
+</div>
+
+<!-- ─── BOTTOM NAV ────────────────────────────────────── -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" onclick="showPage('home')" id="nav-home">
+    <span class="icon">🏠</span>หน้าหลัก
+  </button>
+  <button class="nav-btn" onclick="showPage('entry')" id="nav-entry">
+    <span class="icon">➕</span>บันทึก
+  </button>
+  <button class="nav-btn" onclick="showPage('history')" id="nav-history">
+    <span class="icon">📅</span>ประวัติ
+  </button>
+  <button class="nav-btn" onclick="showPage('reports')" id="nav-reports">
+    <span class="icon">📊</span>รายงาน
+  </button>
+  <button class="nav-btn" onclick="showPage('settings')" id="nav-settings">
+    <span class="icon">⚙️</span>ตั้งค่า
+  </button>
+</nav>
+
+<!-- ─── TOAST ────────────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ─── DELIVERY DETAIL MODAL ────────────────────────────────────── -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
