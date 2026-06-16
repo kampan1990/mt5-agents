@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>รายงานส่งงาน NITORI</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.mini.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--p:#6c63ff;--pd:#574fd6;--g:#2ecc71;--r:#e74c3c;--o:#f39c12;--bg:#f0f2f5;--card:#fff;--text:#1a1a2e;--mu:#888;--bdr:#e8e8e8;--rad:14px;--sh:0 2px 12px rgba(0,0,0,.08);--nb:64px}
@@ -104,6 +105,9 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <div class="sc"><div class="sv" id="s3">-</div><div class="sl">กม.เดือนนี้</div></div>
     <div class="sc"><div class="sv" id="s4">-</div><div class="sl">จุดเดือนนี้</div></div>
   </div>
+  <div style="padding:0 16px 8px">
+    <button class="btn btn-g btn-sm" style="width:100%" onclick="goPage('reports');setTimeout(()=>{document.querySelectorAll('.tab')[2].click()},100)">📊 ส่งออก Excel ทั้งหมด</button>
+  </div>
   <div class="card">
     <div class="ct">รายการล่าสุด</div>
     <div id="recent"></div>
@@ -179,6 +183,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
   <div class="tabs">
     <button class="tab active" onclick="swTab('daily',this)">รายวัน</button>
     <button class="tab" onclick="swTab('sum',this)">สรุป 15 วัน</button>
+    <button class="tab" onclick="swTab('excel',this)">📊 Excel</button>
   </div>
   <div id="tab-daily">
     <div class="card"><div class="fs">
@@ -187,6 +192,25 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div></div>
     <div id="dra"></div>
   </div>
+  <!-- Excel tab -->
+  <div id="tab-excel" style="display:none">
+    <div class="card">
+      <div style="padding:16px">
+        <p style="font-size:14px;font-weight:600;margin-bottom:12px">📊 ส่งออกไฟล์ Excel</p>
+        <p class="mu" style="margin-bottom:16px;font-size:13px">รวมข้อมูลทุกวันไว้ในไฟล์เดียว เปิดได้บน Microsoft Excel / Google Sheets</p>
+        <div class="r2" style="margin-bottom:12px">
+          <div class="fg"><label>จากวันที่</label><input type="date" id="xl-start"></div>
+          <div class="fg"><label>ถึงวันที่</label><input type="date" id="xl-end"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-g btn-sm" onclick="exportExcel('range')">📥 Export ช่วงที่เลือก</button>
+          <button class="btn btn-p btn-sm" onclick="exportExcel('all')">📥 Export ทั้งหมด</button>
+        </div>
+        <div id="xl-preview" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="tab-sum" style="display:none">
     <div class="card"><div class="fs">
       <div class="r2">
@@ -590,6 +614,149 @@ function swTab(name,btn){
   btn.classList.add('active');
   document.getElementById('tab-daily').style.display=name==='daily'?'block':'none';
   document.getElementById('tab-sum').style.display=name==='sum'?'block':'none';
+  document.getElementById('tab-excel').style.display=name==='excel'?'block':'none';
+  if(name==='excel')initExcelTab();
+}
+
+function initExcelTab(){
+  const now=new Date();
+  const y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('xl-start').value=`${y}-${m}-01`;
+  document.getElementById('xl-end').value=todayStr();
+  showXlPreview();
+}
+
+function showXlPreview(){
+  const dels=DB.getDeliveries().sort((a,b)=>b.date.localeCompare(a.date));
+  const el=document.getElementById('xl-preview');
+  if(!dels.length){el.innerHTML='<p class="mu">ยังไม่มีข้อมูล</p>';return;}
+  el.innerHTML=`<div style="background:#f8f9fa;border-radius:8px;padding:12px;font-size:12px">
+    <strong>ข้อมูลในเครื่อง:</strong> ${dels.length} รายการ<br>
+    <span class="mu">ตั้งแต่ ${dels[dels.length-1]?.date} ถึง ${dels[0]?.date}</span>
+  </div>`;
+}
+
+/* ── Excel Export ── */
+function exportExcel(mode){
+  if(typeof XLSX==='undefined'){toast('❌ โหลด SheetJS ไม่ได้ กรุณาเชื่อม internet','err');return;}
+
+  const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
+  let dels=all;
+  let filename='NITORI_รายงานส่งงาน';
+
+  if(mode==='range'){
+    const s=document.getElementById('xl-start').value;
+    const e=document.getElementById('xl-end').value;
+    if(!s||!e){toast('กรุณาเลือกช่วงวันที่','err');return;}
+    dels=all.filter(x=>x.date>=s&&x.date<=e);
+    filename+=`_${s}_ถึง_${e}`;
+  } else {
+    filename+='_ทั้งหมด';
+  }
+
+  if(!dels.length){toast('ไม่มีข้อมูลในช่วงที่เลือก','err');return;}
+
+  const driver=CFG.name||'';
+  const fuelCol=CFG.fuel||'r5';
+  const fuelLabel={'r0':'24-27','r1':'27-30','r2':'30-33','r3':'33-36','r4':'36-39','r5':'39-42'}[fuelCol];
+
+  // Build rows
+  const headers=[
+    'วันที่','วัน','เขต','จังหวัด','จำนวนจุด',
+    'ระยะทาง (กม.)','ยกของขึ้นชั้น','ค่าทางด่วน (บาท)',
+    'เหมาจ่าย (บาท)','รายได้ยกชั้น (บาท)','รวมรายได้ (บาท)','หมายเหตุ','สถานะ'
+  ];
+
+  const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
+
+  const dataRows=dels.map(d=>{
+    if(d.is_holiday){
+      return[d.date,dayNames[new Date(d.date+'T00:00:00').getDay()],'','','','','','','','','','','หยุด'];
+    }
+    const inc=calcInc(d);
+    const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
+    return[
+      d.date,
+      dayNames[new Date(d.date+'T00:00:00').getDay()],
+      d.zone||'',
+      d.province||'',
+      parseInt(d.point_count)||0,
+      parseFloat(d.distance)||0,
+      flTxt,
+      parseFloat(d.toll_fee)||0,
+      inc.km,
+      inc.fl,
+      inc.tot,
+      d.notes||'',
+      'วิ่งงาน'
+    ];
+  });
+
+  // Summary row
+  const workDays=dels.filter(x=>!x.is_holiday);
+  const totInc=workDays.reduce((s,x)=>s+calcInc(x).tot,0);
+  const totKm=workDays.reduce((s,x)=>s+(parseFloat(x.distance)||0),0);
+  const totPts=workDays.reduce((s,x)=>s+(parseInt(x.point_count)||0),0);
+  const totToll=workDays.reduce((s,x)=>s+(parseFloat(x.toll_fee)||0),0);
+  const totKmInc=workDays.reduce((s,x)=>s+calcInc(x).km,0);
+  const totFlInc=workDays.reduce((s,x)=>s+calcInc(x).fl,0);
+  const tax=parseFloat(CFG.tax||'1')/100;
+  const taxAmt=totInc*tax;
+
+  const summaryRow=['รวม','',`วิ่ง ${workDays.length} วัน`,`หยุด ${dels.length-workDays.length} วัน`,totPts,totKm,'',totToll,totKmInc,totFlInc,totInc,'',''];
+
+  const allRows=[headers,...dataRows,summaryRow];
+
+  // Create workbook
+  const ws=XLSX.utils.aoa_to_sheet(allRows);
+
+  // Column widths
+  ws['!cols']=[
+    {wch:12},{wch:5},{wch:12},{wch:12},{wch:9},
+    {wch:12},{wch:20},{wch:14},
+    {wch:14},{wch:16},{wch:14},{wch:20},{wch:8}
+  ];
+
+  // Style header row (row 1)
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let c=range.s.c;c<=range.e.c;c++){
+    const addr=XLSX.utils.encode_cell({r:0,c});
+    if(!ws[addr])continue;
+    ws[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'1A1A2E'}},alignment:{horizontal:'center'}};
+  }
+
+  // Style number columns
+  for(let r=1;r<allRows.length-1;r++){
+    const d=dels[r-1];
+    if(d&&!d.is_holiday){
+      [4,5,7,8,9,10].forEach(c=>{
+        const addr=XLSX.utils.encode_cell({r,c});
+        if(ws[addr])ws[addr].s={alignment:{horizontal:'right'}};
+      });
+    }
+  }
+
+  // Info sheet
+  const infoData=[
+    ['รายงานส่งงาน NITORI'],
+    ['พนักงานขับรถ:',driver],
+    ['เรทน้ำมัน:',fuelLabel+' บาท/ลิตร'],
+    ['วันที่ออกรายงาน:',new Date().toLocaleDateString('th-TH')],
+    [''],
+    ['สรุปรายได้'],
+    ['รวมรายได้:',totInc.toLocaleString()+' บาท'],
+    ['หัก ณ ที่จ่าย '+((tax*100).toFixed(0))+'%:',taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท'],
+    ['รับสุทธิ:',(totInc-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท'],
+  ];
+  const wsInfo=XLSX.utils.aoa_to_sheet(infoData);
+  wsInfo['!cols']=[{wch:20},{wch:25}];
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'รายงานประจำวัน');
+  XLSX.utils.book_append_sheet(wb,wsInfo,'สรุปรายได้');
+
+  XLSX.writeFile(wb,filename+'.xlsx');
+  toast('📥 ดาวน์โหลด Excel สำเร็จ','ok');
 }
 
 function loadDR(){
