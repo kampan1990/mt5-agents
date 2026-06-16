@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>รายงานส่งงาน NITORI</title>
-<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--p:#6c63ff;--pd:#574fd6;--g:#2ecc71;--r:#e74c3c;--o:#f39c12;--bg:#f0f2f5;--card:#fff;--text:#1a1a2e;--mu:#888;--bdr:#e8e8e8;--rad:14px;--sh:0 2px 12px rgba(0,0,0,.08);--nb:64px}
@@ -679,14 +678,22 @@ function showXlPreview(){
   </div>`;
 }
 
-/* ── Excel Export ── */
-function exportExcel(mode){
-  if(typeof XLSX==='undefined'){toast('❌ โหลด SheetJS ไม่ได้ กรุณาเชื่อม internet','err');return;}
+/* ── CSV helpers (ไม่ต้องพึ่ง library ใด) ── */
+function makeCSV(rows){
+  return '﻿'+rows.map(r=>r.map(v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+}
+function downloadCSV(csvStr,filename){
+  const blob=new Blob([csvStr],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
 
+/* ── Reports Tab CSV Export ── */
+function exportExcel(mode){
   const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
   let dels=all;
   let filename='NITORI_รายงานส่งงาน';
-
   if(mode==='range'){
     const s=document.getElementById('xl-start').value;
     const e=document.getElementById('xl-end').value;
@@ -696,46 +703,17 @@ function exportExcel(mode){
   } else {
     filename+='_ทั้งหมด';
   }
-
   if(!dels.length){toast('ไม่มีข้อมูลในช่วงที่เลือก','err');return;}
-
   const driver=CFG.name||'';
-  const fuelCol=CFG.fuel||'r5';
-  const fuelLabel={'r0':'24-27','r1':'27-30','r2':'30-33','r3':'33-36','r4':'36-39','r5':'39-42'}[fuelCol];
-
-  // Build rows
-  const headers=[
-    'วันที่','วัน (พ/อ/จ/พ/ศ/ส/อา)','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง',
-    'ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)',
-    'เหมาจ่าย (บาท)','รายได้ยกชั้น (บาท)','รวมรายได้ (บาท)','หมายเหตุ','สถานะ'
-  ];
-
   const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
-
+  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','เหมาจ่าย (บาท)','รายได้ยกชั้น (บาท)','รวมรายได้ (บาท)','หมายเหตุ','สถานะ'];
   const dataRows=dels.map(d=>{
-    if(d.is_holiday){
-      return[d.date,dayNames[new Date(d.date+'T00:00:00').getDay()],'','','','','','','','','','','หยุด'];
-    }
+    const dn=dayNames[new Date(d.date+'T00:00:00').getDay()];
+    if(d.is_holiday)return[d.date,dn,'','','','','','','','','','','หยุด'];
     const inc=calcInc(d);
     const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
-    return[
-      d.date,
-      dayNames[new Date(d.date+'T00:00:00').getDay()],
-      d.zone||'',
-      d.province||'',
-      parseInt(d.point_count)||0,
-      parseFloat(d.distance)||0,
-      flTxt,
-      parseFloat(d.toll_fee)||0,
-      inc.km,
-      inc.fl,
-      inc.tot,
-      d.notes||'',
-      'วิ่งงาน'
-    ];
+    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,inc.km,inc.fl,inc.tot,d.notes||'','วิ่งงาน'];
   });
-
-  // Summary row
   const workDays=dels.filter(x=>!x.is_holiday);
   const totInc=workDays.reduce((s,x)=>s+calcInc(x).tot,0);
   const totKm=workDays.reduce((s,x)=>s+(parseFloat(x.distance)||0),0);
@@ -745,61 +723,11 @@ function exportExcel(mode){
   const totFlInc=workDays.reduce((s,x)=>s+calcInc(x).fl,0);
   const tax=parseFloat(CFG.tax||'1')/100;
   const taxAmt=totInc*tax;
-
-  const summaryRow=['รวม','',`วิ่ง ${workDays.length} วัน`,`หยุด ${dels.length-workDays.length} วัน`,totPts,totKm,'',totToll,totKmInc,totFlInc,totInc,'',''];
-
-  const allRows=[headers,...dataRows,summaryRow];
-
-  // Create workbook
-  const ws=XLSX.utils.aoa_to_sheet(allRows);
-
-  // Column widths
-  ws['!cols']=[
-    {wch:12},{wch:5},{wch:12},{wch:12},{wch:9},
-    {wch:12},{wch:20},{wch:14},
-    {wch:14},{wch:16},{wch:14},{wch:20},{wch:8}
-  ];
-
-  // Style header row (row 1)
-  const range=XLSX.utils.decode_range(ws['!ref']);
-  for(let c=range.s.c;c<=range.e.c;c++){
-    const addr=XLSX.utils.encode_cell({r:0,c});
-    if(!ws[addr])continue;
-    ws[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'1A1A2E'}},alignment:{horizontal:'center'}};
-  }
-
-  // Style number columns
-  for(let r=1;r<allRows.length-1;r++){
-    const d=dels[r-1];
-    if(d&&!d.is_holiday){
-      [4,5,7,8,9,10].forEach(c=>{
-        const addr=XLSX.utils.encode_cell({r,c});
-        if(ws[addr])ws[addr].s={alignment:{horizontal:'right'}};
-      });
-    }
-  }
-
-  // Info sheet
-  const infoData=[
-    ['รายงานส่งงาน NITORI'],
-    ['พนักงานขับรถ:',driver],
-    ['เรทน้ำมัน:',fuelLabel+' บาท/ลิตร'],
-    ['วันที่ออกรายงาน:',new Date().toLocaleDateString('th-TH')],
-    [''],
-    ['สรุปรายได้'],
-    ['รวมรายได้:',totInc.toLocaleString()+' บาท'],
-    ['หัก ณ ที่จ่าย '+((tax*100).toFixed(0))+'%:',taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท'],
-    ['รับสุทธิ:',(totInc-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท'],
-  ];
-  const wsInfo=XLSX.utils.aoa_to_sheet(infoData);
-  wsInfo['!cols']=[{wch:20},{wch:25}];
-
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'รายงานประจำวัน');
-  XLSX.utils.book_append_sheet(wb,wsInfo,'สรุปรายได้');
-
-  XLSX.writeFile(wb,filename+'.xlsx');
-  toast('📥 ดาวน์โหลด Excel สำเร็จ','ok');
+  const sumRow=['รวม','',`วิ่ง ${workDays.length} วัน`,`หยุด ${dels.length-workDays.length} วัน`,totPts,totKm,'',totToll,totKmInc,totFlInc,totInc,'',''];
+  const infoRows=[['พนักงานขับรถ:',driver],['วันที่ออกรายงาน:',new Date().toLocaleDateString('th-TH')],['รวมรายได้:',totInc+' บาท'],['หัก ณ ที่จ่าย:',taxAmt.toFixed(2)+' บาท'],['รับสุทธิ:',(totInc-taxAmt).toFixed(2)+' บาท']];
+  const csv=makeCSV([headers,...dataRows,sumRow,[],['== สรุป =='],...infoRows]);
+  downloadCSV(csv,filename+'.csv');
+  toast('📥 ดาวน์โหลด CSV สำเร็จ (เปิดได้ใน Excel)','ok');
 }
 
 function loadDR(){
@@ -960,39 +888,29 @@ function showTollDownloadModal(pics,date){
   document.getElementById('modal').classList.add('active');
 }
 
-/* ── Export Daily Excel + Toll Photos ── */
+/* ── Export Daily CSV + Toll Photos ── */
 function exportDailyExcel(date){
-  if(typeof XLSX==='undefined'){toast('❌ โหลด SheetJS ไม่ได้ กรุณาเชื่อม internet','err');return;}
   const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
   const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
   const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','หมายเหตุ','สถานะ'];
   const rows=all.map(d=>{
-    const dayIdx=new Date(d.date+'T00:00:00').getDay();
-    if(d.is_holiday)return[d.date,dayNames[dayIdx],'','','','','','','','หยุด'];
+    const dn=dayNames[new Date(d.date+'T00:00:00').getDay()];
+    if(d.is_holiday)return[d.date,dn,'','','','','','','','หยุด'];
     const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
-    return[d.date,dayNames[dayIdx],d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,d.notes||'','วิ่งงาน'];
+    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,d.notes||'','วิ่งงาน'];
   });
   const driver=CFG.name||'';
-  const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
-  ws['!cols']=[{wch:12},{wch:5},{wch:14},{wch:12},{wch:9},{wch:10},{wch:22},{wch:14},{wch:20},{wch:8}];
-  // Style header row
-  const range=XLSX.utils.decode_range(ws['!ref']);
-  for(let c=range.s.c;c<=range.e.c;c++){
-    const addr=XLSX.utils.encode_cell({r:0,c});
-    if(ws[addr])ws[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'1A1A2E'}},alignment:{horizontal:'center'}};
-  }
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'ข้อมูลวิ่งงาน');
-  const filename=`NITORI_ข้อมูลวิ่งงาน${driver?'_'+driver:''}_${date}.xlsx`;
-  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-  const blob=new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const csv=makeCSV([headers,...rows]);
+  const filename=`NITORI_ข้อมูลวิ่งงาน${driver?'_'+driver:''}_${date}.csv`;
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const d=all.find(x=>x.date===date);
   const tollPics=d?DB.getTollPhotos(d.id):[];
   shareExcelWithPhotos(blob,filename,date,tollPics);
 }
 
 async function shareExcelWithPhotos(xlsxBlob,filename,date,tollPics){
-  const xlFile=new File([xlsxBlob],filename,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const mime=filename.endsWith('.csv')?'text/csv':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const xlFile=new File([xlsxBlob],filename,{type:mime});
   const files=[xlFile];
   if(tollPics.length){
     tollPics.forEach((b64,i)=>{
