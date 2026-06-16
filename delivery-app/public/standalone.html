@@ -407,7 +407,7 @@ function loadHome(){
     ta.innerHTML=`
       <button class="btn btn-o btn-sm" onclick="editD(${d.id})">✏️ แก้ไข</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 LINE</button>
-      <button class="btn btn-w btn-sm" onclick="emailDay('${today}')">📧 อีเมล์</button>`;
+      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${today}')">📊 Excel+รูปบิล</button>`;
   }
   // Month stats
   const now=new Date();
@@ -620,7 +620,7 @@ function showModal(id){
     <div class="brow" style="flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="editD(${id})">✏️</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${d.date}')">📤 LINE</button>
-      <button class="btn btn-w btn-sm" onclick="emailDay('${d.date}')">📧</button>
+      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${d.date}')">📊 Excel</button>
       <button class="btn btn-d btn-sm" onclick="delD(${id})">🗑️</button>
     </div>`;
   document.getElementById('modal').classList.add('active');
@@ -822,7 +822,7 @@ function loadDR(){
       <div style="text-align:center;padding:24px"><span style="font-size:48px">🏖️</span><p style="margin-top:8px;font-weight:600">วันหยุด</p></div>
       <div style="padding:0 16px 16px;display:flex;gap:8px">
         <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
-        <button class="btn btn-w btn-sm" onclick="emailDay('${date}')">📧 ส่งอีเมล์</button>
+        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 Excel+รูปบิล</button>
       </div>
     </div>`:
     `<div class="card" style="margin-top:8px">
@@ -842,7 +842,7 @@ function loadDR(){
       <div class="inet" style="margin:12px 16px 8px"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
       <div style="padding:0 16px 16px;display:flex;gap:8px">
         <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
-        <button class="btn btn-w btn-sm" onclick="emailDay('${date}')">📧 ส่งอีเมล์</button>
+        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 Excel+รูปบิล</button>
       </div>
     </div>`;
 }
@@ -958,6 +958,62 @@ function showTollDownloadModal(pics,date){
     <button class="btn btn-o btn-sm" style="width:100%;margin-top:4px" onclick="closeModal()">ปิด</button>
   `;
   document.getElementById('modal').classList.add('active');
+}
+
+/* ── Export Daily Excel + Toll Photos ── */
+function exportDailyExcel(date){
+  if(typeof XLSX==='undefined'){toast('❌ โหลด SheetJS ไม่ได้ กรุณาเชื่อม internet','err');return;}
+  const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
+  const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
+  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','หมายเหตุ','สถานะ'];
+  const rows=all.map(d=>{
+    const dayIdx=new Date(d.date+'T00:00:00').getDay();
+    if(d.is_holiday)return[d.date,dayNames[dayIdx],'','','','','','','','หยุด'];
+    const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
+    return[d.date,dayNames[dayIdx],d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,d.notes||'','วิ่งงาน'];
+  });
+  const driver=CFG.name||'';
+  const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
+  ws['!cols']=[{wch:12},{wch:5},{wch:14},{wch:12},{wch:9},{wch:10},{wch:22},{wch:14},{wch:20},{wch:8}];
+  // Style header row
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let c=range.s.c;c<=range.e.c;c++){
+    const addr=XLSX.utils.encode_cell({r:0,c});
+    if(ws[addr])ws[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'1A1A2E'}},alignment:{horizontal:'center'}};
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'ข้อมูลวิ่งงาน');
+  const filename=`NITORI_ข้อมูลวิ่งงาน${driver?'_'+driver:''}_${date}.xlsx`;
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const blob=new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const d=all.find(x=>x.date===date);
+  const tollPics=d?DB.getTollPhotos(d.id):[];
+  shareExcelWithPhotos(blob,filename,date,tollPics);
+}
+
+async function shareExcelWithPhotos(xlsxBlob,filename,date,tollPics){
+  const xlFile=new File([xlsxBlob],filename,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const files=[xlFile];
+  if(tollPics.length){
+    tollPics.forEach((b64,i)=>{
+      try{files.push(new File([b64ToBlob(b64)],`บิลทางด่วน_${date}_${i+1}.jpg`,{type:'image/jpeg'}));}catch(e){}
+    });
+  }
+  if(navigator.share){
+    try{
+      const shareData={title:`ข้อมูลวิ่งงาน NITORI ${date}`,files};
+      if(navigator.canShare&&navigator.canShare(shareData)){
+        await navigator.share(shareData);
+        return;
+      }
+    }catch(e){}
+  }
+  // Fallback: download xlsx
+  const url=URL.createObjectURL(xlsxBlob);
+  const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+  URL.revokeObjectURL(url);
+  toast('📥 ดาวน์โหลด Excel สำเร็จ','ok');
+  if(tollPics.length)setTimeout(()=>showTollDownloadModal(tollPics,date),600);
 }
 
 function shareSum(start,end){
