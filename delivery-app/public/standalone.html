@@ -131,17 +131,25 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <div id="wf">
       <div class="card"><div class="fs">
         <div class="r2">
-          <div class="fg"><label>🗺️ เขต</label><input type="text" id="fzone" placeholder="เช่น บางรัก"></div>
-          <div class="fg"><label>🏙️ จังหวัด</label><input type="text" id="fprov" placeholder="กรุงเทพ"></div>
+          <div class="fg"><label>🗺️ เขต/อำเภอที่วิ่งงาน</label><input type="text" id="fzone" placeholder="เช่น บางรัก, เมือง"></div>
+          <div class="fg"><label>🏙️ จังหวัดที่วิ่งงาน</label><input type="text" id="fprov" placeholder="เช่น กรุงเทพ"></div>
         </div>
         <div class="r2">
-          <div class="fg"><label>📍 จำนวนจุด</label><input type="number" id="fpts" placeholder="0" min="0" inputmode="numeric"></div>
-          <div class="fg"><label>🛣️ ระยะทาง (กม.)</label><input type="number" id="fdist" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updPreview()"></div>
+          <div class="fg"><label>📍 จำนวนจุดส่ง</label>
+            <select id="fpts" style="appearance:auto">
+              <option value="0">เลือกจำนวน</option>
+              <option value="1">1 จุด</option><option value="2">2 จุด</option>
+              <option value="3">3 จุด</option><option value="4">4 จุด</option>
+              <option value="5">5 จุด</option><option value="6">6 จุด</option>
+              <option value="7">7 จุด</option><option value="8">8 จุด</option>
+            </select>
+          </div>
+          <div class="fg"><label>🛣️ ระยะกิโล</label><input type="number" id="fdist" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updPreview()"></div>
         </div>
-        <div class="fg"><label>🛣️ ค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
+        <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
       </div></div>
       <div class="card">
-        <div class="ct">🏢 ยกของขึ้นชั้น (ชั้น 3+ = 100฿/ชั้น)</div>
+        <div class="ct">🏢 ชั้นที่ยกขึ้น/บ้าน (ชั้น 3+ = 100฿/ชั้น, หากไม่มียกกด "+" แล้วใส่ 0)</div>
         <div id="flist" style="padding:0 16px 8px"></div>
         <div style="padding:0 16px 16px"><button type="button" class="btn btn-o btn-sm" onclick="addFloor()">+ เพิ่มรายการ</button></div>
       </div>
@@ -427,7 +435,7 @@ function initForm(dEdit){
     document.getElementById('fhol').checked=!!dEdit.is_holiday;
     document.getElementById('fzone').value=dEdit.zone||'';
     document.getElementById('fprov').value=dEdit.province||'';
-    document.getElementById('fpts').value=dEdit.point_count||'';
+    document.getElementById('fpts').value=dEdit.point_count||0;
     document.getElementById('fdist').value=dEdit.distance||'';
     document.getElementById('ftoll').value=dEdit.toll_fee||'';
     document.getElementById('fnotes').value=dEdit.notes||'';
@@ -566,12 +574,12 @@ function showModal(id){
       <button class="btn btn-d btn-sm" onclick="delD(${id})">🗑️ ลบ</button>
     </div>`:
     `<div class="mt">${fmtTH(d.date)}</div>
-    <div class="ir"><span class="lbl">เขต / จังหวัด</span><span class="val">${d.zone||'-'} ${d.province?'/ '+d.province:''}</span></div>
-    <div class="ir"><span class="lbl">จำนวนจุด</span><span class="val">${d.point_count||0} จุด</span></div>
-    <div class="ir"><span class="lbl">ระยะทาง</span><span class="val">${d.distance||0} กม.</span></div>
+    <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${d.zone||'-'}${d.province?' / '+d.province:''}</span></div>
+    <div class="ir"><span class="lbl">จำนวนจุดส่ง</span><span class="val">${d.point_count||0} จุด</span></div>
+    <div class="ir"><span class="lbl">ระยะกิโล</span><span class="val">${d.distance||0} กม.</span></div>
     <div class="ir"><span class="lbl">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
-    <div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${inc.fl.toLocaleString()} ฿<br><small style="color:var(--mu)">${flTxt}</small></span></div>
-    <div class="ir"><span class="lbl">ค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
+    <div class="ir"><span class="lbl">ชั้นที่ยกขึ้น/บ้าน</span><span class="val">${inc.fl.toLocaleString()} ฿<br><small style="color:var(--mu)">${flTxt}</small></span></div>
+    <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
     <div class="inet" style="margin:12px 0"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
     ${d.notes?`<p style="font-size:13px;color:var(--mu);margin-bottom:12px">📝 ${d.notes}</p>`:''}
     ${photos.length?`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:12px">${photos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div>`:''}
@@ -662,8 +670,8 @@ function exportExcel(mode){
 
   // Build rows
   const headers=[
-    'วันที่','วัน','เขต','จังหวัด','จำนวนจุด',
-    'ระยะทาง (กม.)','ยกของขึ้นชั้น','ค่าทางด่วน (บาท)',
+    'วันที่','วัน (พ/อ/จ/พ/ศ/ส/อา)','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง',
+    'ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)',
     'เหมาจ่าย (บาท)','รายได้ยกชั้น (บาท)','รวมรายได้ (บาท)','หมายเหตุ','สถานะ'
   ];
 
@@ -787,11 +795,11 @@ function loadDR(){
         <p style="font-weight:700;font-size:16px">📦 รายงานประจำวัน ${fmtTH(date)}</p>
         ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 พนักงานขับรถ: ${driver}</p>`:''}
       </div>
-      <div class="ir"><span class="lbl">เขต / จังหวัด</span><span class="val">${d.zone||'-'}${d.province?' / '+d.province:''}</span></div>
+      <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${d.zone||'-'}${d.province?' / '+d.province:''}</span></div>
       <div class="ir"><span class="lbl">จำนวนจุดส่ง</span><span class="val">${d.point_count||0} จุด</span></div>
-      <div class="ir"><span class="lbl">ระยะทาง</span><span class="val">${d.distance||0} กม.</span></div>
-      <div class="ir"><span class="lbl">บิลค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
-      ${(d.floor_deliveries||[]).length?`<div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${flTxt}</span></div>`:''}
+      <div class="ir"><span class="lbl">ระยะกิโล</span><span class="val">${d.distance||0} กม.</span></div>
+      <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
+      ${(d.floor_deliveries||[]).length?`<div class="ir"><span class="lbl">ชั้นที่ยกขึ้น/บ้าน</span><span class="val">${flTxt}</span></div>`:''}
       ${d.notes?`<div class="ir"><span class="lbl">หมายเหตุ</span><span class="val">${d.notes}</span></div>`:''}
       <div style="height:1px;background:var(--bdr);margin:4px 16px"></div>
       <div class="ir"><span class="lbl" style="color:var(--mu)">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
@@ -850,14 +858,14 @@ function shareDay(date){
   if(d.is_holiday){
     txt=`📋 รายงานประจำวัน\nพนักงาน: ${driver}\nวันที่: ${date}\n──────────────────\n🏖️ วันหยุด`;
   } else {
-    txt=`📦 รายงานประจำวัน
+    txt=`📦 รายงานประจำวัน Nitori Truck No.2
 พนักงานขับรถ: ${driver}
 วันที่: ${fmtTH(date)}
 ──────────────────
-🗺️ เขต/จังหวัด: ${d.zone||'-'}${d.province?' / '+d.province:''}
+🗺️ เขต/อำเภอ: ${d.zone||'-'}${d.province?' / '+d.province:''}
 📍 จำนวนจุดส่ง: ${d.point_count||0} จุด
-🛣️ ระยะทาง: ${d.distance||0} กม.
-🧾 บิลค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\n📝 หมายเหตุ: '+d.notes:''}`;
+🛣️ ระยะกิโล: ${d.distance||0} กม.
+🧾 รวมค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${(d.floor_deliveries||[]).length&&d.floor_deliveries.some(f=>f.floor>=3)?'\n🏢 ชั้นที่ยกขึ้น/บ้าน: '+(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(', '):''}${d.notes?'\n📝 หมายเหตุ: '+d.notes:''}`;
   }
   copyAndShare(txt);
 }
@@ -875,7 +883,7 @@ function emailDay(date){
     body=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${date}\nพนักงานขับรถ: ${driver}\n\nวันหยุด\n\nขอแสดงความนับถือ\n${driver}`;
   } else {
     subject=`รายงานประจำวัน ${date} - ${driver}`;
-    body=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${fmtTH(date)}\nพนักงานขับรถ: ${driver}\n\nรายละเอียดงานที่จัดส่ง:\n──────────────────\nเขต/จังหวัด: ${d.zone||'-'}${d.province?' / '+d.province:''}\nจำนวนจุดส่ง: ${d.point_count||0} จุด\nระยะทาง: ${d.distance||0} กิโลเมตร\nบิลค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\nหมายเหตุ: '+d.notes:''}\n\nขอแสดงความนับถือ\n${driver}`;
+    body=`เรียน หัวหน้า\n\nรายงานประจำวัน Nitori Truck No.2\nวันที่: ${fmtTH(date)}\nพนักงานขับรถ: ${driver}\n\nรายละเอียดงานที่จัดส่ง:\n──────────────────\nเขต/อำเภอที่วิ่งงาน: ${d.zone||'-'}\nจังหวัดที่วิ่งงาน: ${d.province||'-'}\nจำนวนจุดส่ง: ${d.point_count||0} จุด\nระยะกิโล: ${d.distance||0} กิโลเมตร\nชั้นที่ยกขึ้น/บ้าน: ${(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'ไม่มี'}\nรวมค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\nหมายเหตุ: '+d.notes:''}\n\nขอแสดงความนับถือ\n${driver}`;
   }
   const mailto=`mailto:${encodeURIComponent(boss)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href=mailto;
