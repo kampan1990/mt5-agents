@@ -147,6 +147,13 @@ input:checked+.tgt:before{transform:translateX(20px)}
           <div class="fg"><label>🛣️ ระยะกิโล</label><input type="number" id="fdist" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updPreview()"></div>
         </div>
         <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
+        <div class="fg" id="tp-wrap">
+          <label>📷 รูปบิลค่าทางด่วน (แนบในอีเมล์อัตโนมัติ)</label>
+          <div id="tpgrid" class="pg">
+            <div class="apb" onclick="document.getElementById('tp-in').click()"><div class="apbi">🧾</div><span>ถ่ายรูปบิล</span></div>
+          </div>
+          <input type="file" id="tp-in" accept="image/*" multiple style="display:none" onchange="addTollPics(this)">
+        </div>
       </div></div>
       <div class="card">
         <div class="ct">🏢 ชั้นที่ยกขึ้น/บ้าน (ชั้น 3+ = 100฿/ชั้น, หากไม่มียกกด "+" แล้วใส่ 0)</div>
@@ -287,6 +294,9 @@ const DB = {
   getPhotos(id){ try{return JSON.parse(localStorage.getItem('nitori_ph_'+id)||'[]')}catch{return[]} },
   savePhotos(id,ps){ localStorage.setItem('nitori_ph_'+id,JSON.stringify(ps)) },
   deletePhotos(id){ localStorage.removeItem('nitori_ph_'+id) },
+  getTollPhotos(id){ try{return JSON.parse(localStorage.getItem('nitori_tp_'+id)||'[]')}catch{return[]} },
+  saveTollPhotos(id,ps){ localStorage.setItem('nitori_tp_'+id,JSON.stringify(ps)) },
+  deleteTollPhotos(id){ localStorage.removeItem('nitori_tp_'+id) },
   nextId(){ const n=(parseInt(localStorage.getItem('nitori_seq')||'0'))+1; localStorage.setItem('nitori_seq',n); return n; }
 };
 
@@ -322,6 +332,7 @@ const NT=[
 
 let CFG = {};
 let pendPics = [];
+let pendTollPics = [];
 let hYear = new Date().getFullYear();
 let hMo = new Date().getMonth();
 
@@ -440,6 +451,7 @@ function initForm(dEdit){
     document.getElementById('ftoll').value=dEdit.toll_fee||'';
     document.getElementById('fnotes').value=dEdit.notes||'';
     renderFloors(dEdit.floor_deliveries||[]);
+    pendTollPics=DB.getTollPhotos(dEdit.id);
   } else {
     document.getElementById('etitle').textContent='📝 บันทึกงานวันนี้';
     document.getElementById('eid').value='';
@@ -447,8 +459,9 @@ function initForm(dEdit){
     document.getElementById('fdate').value=todayStr();
     document.getElementById('fhol').checked=false;
     renderFloors([]);
+    pendTollPics=[];
   }
-  togHol();renderPics();updPreview();
+  togHol();renderPics();renderTollPics();updPreview();
 }
 
 function togHol(){
@@ -514,6 +527,22 @@ function renderPics(){
 }
 function rmPic(i){pendPics.splice(i,1);renderPics();}
 
+function addTollPics(inp){
+  Array.from(inp.files).forEach(f=>{
+    const r=new FileReader();
+    r.onload=e=>{pendTollPics.push(e.target.result);renderTollPics();}
+    r.readAsDataURL(f);
+  });
+  inp.value='';
+}
+function renderTollPics(){
+  const g=document.getElementById('tpgrid');
+  if(!g)return;
+  g.innerHTML=pendTollPics.map((p,i)=>`<div class="pi"><img src="${p}"><button type="button" class="pd" onclick="rmTollPic(${i})">✕</button></div>`).join('')
+    +`<div class="apb" onclick="document.getElementById('tp-in').click()"><div class="apbi">🧾</div><span>เพิ่มรูปบิล</span></div>`;
+}
+function rmTollPic(i){pendTollPics.splice(i,1);renderTollPics();}
+
 /* ── Form Submit ── */
 document.getElementById('eform').addEventListener('submit',e=>{
   e.preventDefault();
@@ -540,8 +569,12 @@ document.getElementById('eform').addEventListener('submit',e=>{
     const existing=DB.getPhotos(del.id);
     DB.savePhotos(del.id,[...existing,...pendPics]);
   }
+  if(pendTollPics.length){
+    const existing=DB.getTollPhotos(del.id);
+    DB.saveTollPhotos(del.id,[...existing,...pendTollPics]);
+  }
   toast('✅ บันทึกสำเร็จ','ok');
-  pendPics=[];
+  pendPics=[];pendTollPics=[];
   goPage('home');
 });
 
@@ -582,7 +615,8 @@ function showModal(id){
     <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
     <div class="inet" style="margin:12px 0"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
     ${d.notes?`<p style="font-size:13px;color:var(--mu);margin-bottom:12px">📝 ${d.notes}</p>`:''}
-    ${photos.length?`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:12px">${photos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div>`:''}
+    ${photos.length?`<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--mu);margin-bottom:4px">รูปถ่ายงาน</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${photos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div></div>`:''}
+    ${DB.getTollPhotos(id).length?`<div style="margin-bottom:12px"><div style="font-size:12px;color:#e67e22;font-weight:600;margin-bottom:4px">🧾 รูปบิลค่าทางด่วน</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${DB.getTollPhotos(id).map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div></div>`:''}
     <div class="brow" style="flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="editD(${id})">✏️</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${d.date}')">📤 LINE</button>
@@ -605,6 +639,7 @@ function delD(id){
   const dels=DB.getDeliveries().filter(x=>x.id!==id);
   DB.saveDeliveries(dels);
   DB.deletePhotos(id);
+  DB.deleteTollPhotos(id);
   toast('🗑️ ลบแล้ว');
   loadHist();loadHome();
 }
@@ -871,22 +906,58 @@ function shareDay(date){
 }
 
 /* ── Email daily report ── */
-function emailDay(date){
+async function emailDay(date){
   const dels=DB.getDeliveries();
   const d=dels.find(x=>x.date===date);
   if(!d)return;
   const boss=CFG.boss||'';
   const driver=CFG.name||'';
-  let subject,body;
+  let subject,bodyText;
   if(d.is_holiday){
     subject=`รายงานประจำวัน ${date} - วันหยุด`;
-    body=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${date}\nพนักงานขับรถ: ${driver}\n\nวันหยุด\n\nขอแสดงความนับถือ\n${driver}`;
+    bodyText=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${date}\nพนักงานขับรถ: ${driver}\n\nวันหยุด\n\nขอแสดงความนับถือ\n${driver}`;
   } else {
+    const inc=calcInc(d);
+    const flTxt=(d.floor_deliveries||[]).filter(f=>f.floor>=3).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง (${(f.floor-2)*100*(f.count||1)} บาท)`).join(', ')||'ไม่มี';
     subject=`รายงานประจำวัน ${date} - ${driver}`;
-    body=`เรียน หัวหน้า\n\nรายงานประจำวัน Nitori Truck No.2\nวันที่: ${fmtTH(date)}\nพนักงานขับรถ: ${driver}\n\nรายละเอียดงานที่จัดส่ง:\n──────────────────\nเขต/อำเภอที่วิ่งงาน: ${d.zone||'-'}\nจังหวัดที่วิ่งงาน: ${d.province||'-'}\nจำนวนจุดส่ง: ${d.point_count||0} จุด\nระยะกิโล: ${d.distance||0} กิโลเมตร\nชั้นที่ยกขึ้น/บ้าน: ${(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'ไม่มี'}\nรวมค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\nหมายเหตุ: '+d.notes:''}\n\nขอแสดงความนับถือ\n${driver}`;
+    bodyText=`เรียน หัวหน้า\n\nรายงานประจำวัน Nitori Truck No.2\nวันที่: ${fmtTH(date)}\nพนักงานขับรถ: ${driver}\n\nรายละเอียดงานที่จัดส่ง:\n──────────────────\nเขต/อำเภอที่วิ่งงาน: ${d.zone||'-'}\nจังหวัดที่วิ่งงาน: ${d.province||'-'}\nจำนวนจุดส่ง: ${d.point_count||0} จุด\nระยะกิโล: ${d.distance||0} กิโลเมตร\nชั้นที่ยกขึ้น/บ้าน: ${flTxt}\nรวมค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\nหมายเหตุ: '+d.notes:''}\n\nรายได้:\nเหมาจ่าย: ${inc.km.toLocaleString()} บาท\nยกชั้น: ${inc.fl.toLocaleString()} บาท\nรวม: ${inc.tot.toLocaleString()} บาท\n\nขอแสดงความนับถือ\n${driver}`;
   }
-  const mailto=`mailto:${encodeURIComponent(boss)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href=mailto;
+  const tollPics=DB.getTollPhotos(d.id);
+  if(tollPics.length&&navigator.share){
+    try{
+      const files=tollPics.map((b64,i)=>new File([b64ToBlob(b64)],`บิลทางด่วน_${date}_${i+1}.jpg`,{type:'image/jpeg'}));
+      if(navigator.canShare&&navigator.canShare({files})){
+        await navigator.share({title:subject,text:bodyText,files});
+        return;
+      }
+    }catch(e){}
+  }
+  window.location.href=`mailto:${encodeURIComponent(boss)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+  if(tollPics.length){
+    setTimeout(()=>showTollDownloadModal(tollPics,date),800);
+  }
+}
+
+function b64ToBlob(base64){
+  const[hd,data]=base64.split(',');
+  const mime=hd.match(/:(.*?);/)[1];
+  const bin=atob(data);const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+
+function showTollDownloadModal(pics,date){
+  document.getElementById('mc').innerHTML=`
+    <div class="mt">📎 แนบรูปบิลค่าทางด่วน</div>
+    <p style="font-size:14px;color:#555;margin-bottom:12px">อีเมล์เปิดแล้ว — กดดาวน์โหลดรูปด้านล่าง แล้วแนบในอีเมล์:</p>
+    ${pics.map((p,i)=>`
+      <div style="margin-bottom:10px;border:1px solid var(--bdr);border-radius:8px;overflow:hidden">
+        <img src="${p}" style="width:100%;max-height:180px;object-fit:cover;display:block">
+        <a href="${p}" download="บิลทางด่วน_${date||''}_${i+1}.jpg" class="btn btn-g btn-sm" style="display:flex;text-align:center;margin:8px;text-decoration:none">⬇️ ดาวน์โหลดรูปบิล ${i+1}</a>
+      </div>`).join('')}
+    <button class="btn btn-o btn-sm" style="width:100%;margin-top:4px" onclick="closeModal()">ปิด</button>
+  `;
+  document.getElementById('modal').classList.add('active');
 }
 
 function shareSum(start,end){
@@ -904,7 +975,54 @@ function shareSum(start,end){
 }
 
 /* ── PDF 15-day ── */
+let sigPad={canvas:null,ctx:null,drawing:false};
+
 function pdfSum(start,end){
+  showSigModal(start,end);
+}
+
+function showSigModal(start,end){
+  document.getElementById('mc').innerHTML=`
+    <div class="mt">✍️ เซ็นลายเซ็นก่อนสร้าง PDF</div>
+    <p class="mu" style="margin-bottom:12px;font-size:13px">วาดลายเซ็นในกรอบด้านล่าง หรือกด "ข้าม" เพื่อสร้าง PDF โดยไม่เซ็น</p>
+    <canvas id="sig-cv" style="border:2px solid var(--bdr);border-radius:10px;width:100%;background:#fff;cursor:crosshair;touch-action:none" height="140"></canvas>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn btn-o btn-sm" onclick="clearSig()">🗑️ ล้างลายเซ็น</button>
+      <button class="btn btn-w btn-sm" onclick="buildPDF('${start}','${end}',null);closeModal()">ข้าม</button>
+      <button class="btn btn-p" style="flex:1" onclick="buildPDF('${start}','${end}',captureSig());closeModal()">📄 สร้าง PDF พร้อมลายเซ็น</button>
+    </div>
+  `;
+  document.getElementById('modal').classList.add('active');
+  setTimeout(()=>{
+    const cv=document.getElementById('sig-cv');
+    if(!cv)return;
+    cv.width=cv.offsetWidth;
+    const ctx=cv.getContext('2d');
+    ctx.strokeStyle='#000';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';
+    sigPad={canvas:cv,ctx,drawing:false};
+    function pt(e){const r=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:(t.clientX-r.left)*(cv.width/r.width),y:(t.clientY-r.top)*(cv.height/r.height)};}
+    cv.addEventListener('mousedown',e=>{sigPad.drawing=true;const p=pt(e);ctx.beginPath();ctx.moveTo(p.x,p.y);});
+    cv.addEventListener('mousemove',e=>{if(!sigPad.drawing)return;const p=pt(e);ctx.lineTo(p.x,p.y);ctx.stroke();});
+    cv.addEventListener('mouseup',()=>{sigPad.drawing=false;});
+    cv.addEventListener('mouseleave',()=>{sigPad.drawing=false;});
+    cv.addEventListener('touchstart',e=>{e.preventDefault();sigPad.drawing=true;const p=pt(e);ctx.beginPath();ctx.moveTo(p.x,p.y);},{passive:false});
+    cv.addEventListener('touchmove',e=>{e.preventDefault();if(!sigPad.drawing)return;const p=pt(e);ctx.lineTo(p.x,p.y);ctx.stroke();},{passive:false});
+    cv.addEventListener('touchend',()=>{sigPad.drawing=false;});
+  },100);
+}
+
+function clearSig(){
+  if(sigPad.canvas)sigPad.ctx.clearRect(0,0,sigPad.canvas.width,sigPad.canvas.height);
+}
+
+function captureSig(){
+  if(!sigPad.canvas)return null;
+  const d=sigPad.ctx.getImageData(0,0,sigPad.canvas.width,sigPad.canvas.height).data;
+  const hasInk=Array.from(d).some((v,i)=>i%4===3&&v>0);
+  return hasInk?sigPad.canvas.toDataURL('image/png'):null;
+}
+
+function buildPDF(start,end,sigData){
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
   const driver=CFG.name||'................................';
@@ -1011,10 +1129,10 @@ function pdfSum(start,end){
 
 <div class="sign">
   <div class="sign-box">
-    <div class="sign-line"></div>
+    ${sigData?`<img src="${sigData}" style="max-height:60px;max-width:220px;display:block;margin:0 auto">`:` <div class="sign-line"></div>`}
     <div class="sign-label">ลายเซ็นพนักงานขับรถ</div>
     <div class="sign-name">(${CFG.name||'................................................'})</div>
-    <div class="sign-name" style="margin-top:4px">วันที่ ..../..../........</div>
+    <div class="sign-name" style="margin-top:4px">วันที่ ${new Date().toLocaleDateString('th-TH')}</div>
   </div>
   <div class="sign-box">
     <div class="sign-line"></div>
