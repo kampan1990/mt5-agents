@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+data/transcripts/*.json
+data/extracted/*.json
+data/checkpoints/*.json
+data/low_confidence/*.json
+knowledge_base/catalog.json
+reports/pipeline_summary.md

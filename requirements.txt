@@ -1,0 +1,5 @@
+anthropic>=0.40.0
+youtube-transcript-api>=0.6.2
+yt-dlp==2024.12.13
+python-dotenv>=1.0.0
+python-slugify>=8.0.4
