@@ -689,7 +689,7 @@ void OnTick()
     // ----------------------------------------------------------------
     // Build trade setup
     // ----------------------------------------------------------------
-    int    strategy_magic = MagicBase + result.bias; // Assign to strongest side's magic
+    int    strategy_magic = MagicBase + (trade_bias > 0 ? 0 : 1); // Assign unique magic per direction (0=BUY, 1=SELL)
     string order_comment  = StringFormat("%s_%s", TradeComment,
                                          trade_bias > 0 ? "BUY" : "SELL");
 

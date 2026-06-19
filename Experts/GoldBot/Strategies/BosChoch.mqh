@@ -183,7 +183,8 @@ public:
 
         // Sub-condition 3: Pre-break consolidation
         int break_bar = 1; // The break just happened at bar[1]
-        if(HasConsolidation(break_bar, atr))
+        bool has_consol = HasConsolidation(break_bar, atr); // Evaluate once, reuse below
+        if(has_consol)
             conditions_met++;
 
         // Sub-condition 4: ATR momentum at break
@@ -201,7 +202,7 @@ public:
                                      bull_break ? "bull" : "bear",
                                      prev_low, prev_high,
                                      is_choch ? "Y" : "N",
-                                     HasConsolidation(1, atr) ? "Y" : "N",
+                                     has_consol ? "Y" : "N",
                                      atr, conditions_met);
         return result;
     }

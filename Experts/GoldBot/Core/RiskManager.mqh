@@ -366,6 +366,7 @@ public:
         else if(m_tp_method == TP_ATR)
         {
             double atr = (m_atr != NULL) ? m_atr.GetATR(1) : sl_dist;
+            if(atr <= 0.0) atr = sl_dist; // Fallback: use SL distance if ATR not ready
             if(bias > 0)
             {
                 setup.tp1_price = NormalizeDouble(setup.entry_price + m_tp1_rr * atr, digits);
@@ -375,6 +376,27 @@ public:
             {
                 setup.tp1_price = NormalizeDouble(setup.entry_price - m_tp1_rr * atr, digits);
                 setup.tp2_price = NormalizeDouble(setup.entry_price - m_tp2_rr * atr, digits);
+            }
+        }
+        else // TP_FIXED: m_tp1_rr / m_tp2_rr are interpreted as fixed point distances
+        {
+            if(m_tp1_rr <= 0.0 || m_tp2_rr <= 0.0)
+            {
+                if(m_logger != NULL)
+                    m_logger.LogError("BuildTradeSetup TP_FIXED: tp1_rr/tp2_rr must be > 0", 0);
+                return false;
+            }
+            double tp1_dist = m_tp1_rr * point;
+            double tp2_dist = m_tp2_rr * point;
+            if(bias > 0)
+            {
+                setup.tp1_price = NormalizeDouble(setup.entry_price + tp1_dist, digits);
+                setup.tp2_price = NormalizeDouble(setup.entry_price + tp2_dist, digits);
+            }
+            else
+            {
+                setup.tp1_price = NormalizeDouble(setup.entry_price - tp1_dist, digits);
+                setup.tp2_price = NormalizeDouble(setup.entry_price - tp2_dist, digits);
             }
         }
 
@@ -401,13 +423,31 @@ public:
         }
 
         // Calculate lot sizes (split between two positions)
+        // total_lot is already clamped to LotMax by CalcLotSize.
+        // After splitting, each leg is floored at LotMin.
+        // If flooring causes the sum to exceed LotMax, scale both legs down.
         double total_lot = CalcLotSize(sl_distance);
         double lot1_frac = m_tp1_vol_pct / 100.0;
         double lot2_frac = 1.0 - lot1_frac;
         int lot_digits   = GetLotDigits();
 
-        setup.lot1 = NormalizeDouble(MathMax(m_lot_min, total_lot * lot1_frac), lot_digits);
-        setup.lot2 = NormalizeDouble(MathMax(m_lot_min, total_lot * lot2_frac), lot_digits);
+        double raw_lot1 = NormalizeDouble(MathMax(m_lot_min, total_lot * lot1_frac), lot_digits);
+        double raw_lot2 = NormalizeDouble(MathMax(m_lot_min, total_lot * lot2_frac), lot_digits);
+
+        // Ensure combined exposure does not exceed LotMax
+        double combined = raw_lot1 + raw_lot2;
+        if(combined > m_lot_max)
+        {
+            double scale  = m_lot_max / combined;
+            raw_lot1 = NormalizeDouble(MathMax(m_lot_min, raw_lot1 * scale), lot_digits);
+            raw_lot2 = NormalizeDouble(MathMax(m_lot_min, raw_lot2 * scale), lot_digits);
+            if(m_logger != NULL)
+                m_logger.LogWarning(StringFormat("BuildTradeSetup: combined lot %.2f > LotMax %.2f, scaled to lot1=%.2f lot2=%.2f",
+                                                 combined, m_lot_max, raw_lot1, raw_lot2));
+        }
+
+        setup.lot1 = raw_lot1;
+        setup.lot2 = raw_lot2;
 
         setup.valid = true;
         return true;
