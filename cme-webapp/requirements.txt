@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+undetected-chromedriver
+selenium
+anthropic
+python-dotenv
+jinja2

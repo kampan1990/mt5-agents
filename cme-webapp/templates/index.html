@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CME Gold Vol2Vol Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0f1117; }
+    .signal-buy  { background: linear-gradient(135deg, #052e16, #14532d); border-color: #16a34a; }
+    .signal-sell { background: linear-gradient(135deg, #2d0a0a, #7f1d1d); border-color: #dc2626; }
+    .signal-hold { background: linear-gradient(135deg, #1c1708, #713f12); border-color: #ca8a04; }
+    .confidence-bar-fill { transition: width 0.8s ease; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; }
+    .card { background: #1a1d27; border: 1px solid #2a2d3e; }
+  </style>
+</head>
+<body class="min-h-screen text-gray-100 flex flex-col items-center px-4 py-10">
+
+  <!-- Header -->
+  <div class="w-full max-w-3xl mb-8 text-center">
+    <h1 class="text-3xl font-bold text-white mb-1">CME Gold Vol2Vol Analyzer</h1>
+    <p class="text-gray-400 text-sm">Scrapes CME Expected Range data for Gold (GC) and analyzes with Claude AI</p>
+  </div>
+
+  <!-- Analyze Button -->
+  <button
+    id="analyzeBtn"
+    onclick="runAnalysis()"
+    class="mb-8 px-8 py-3 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    Analyze Now
+  </button>
+
+  <!-- Loading Spinner -->
+  <div id="loadingSection" class="hidden flex flex-col items-center gap-3 mb-8">
+    <div class="spinner w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full"></div>
+    <p class="text-gray-400 text-sm">Scraping CME data and analyzing with Claude...</p>
+  </div>
+
+  <!-- Error Section -->
+  <div id="errorSection" class="hidden w-full max-w-3xl mb-6 p-4 rounded-xl bg-red-950 border border-red-700 text-red-300 text-sm"></div>
+
+  <!-- Results Section -->
+  <div id="resultsSection" class="hidden w-full max-w-3xl space-y-4">
+
+    <!-- Date & Metadata -->
+    <div class="card rounded-xl p-4 flex flex-wrap gap-6">
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Data Date</p>
+        <p id="resDate" class="text-white font-semibold">—</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Current Price</p>
+        <p id="resCurrentPrice" class="text-white font-semibold">—</p>
+      </div>
+      <div>
+        <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Implied Volatility</p>
+        <p id="resIV" class="text-white font-semibold">—</p>
+      </div>
+    </div>
+
+    <!-- Expected Range -->
+    <div class="card rounded-xl p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-3">Expected Range</p>
+      <div class="flex items-center gap-4">
+        <div class="text-center">
+          <p class="text-xs text-gray-400 mb-1">Range Low</p>
+          <p id="resRangeLow" class="text-2xl font-bold text-red-400">—</p>
+        </div>
+        <div class="flex-1 h-2 rounded-full bg-gray-700 relative mx-2">
+          <div id="priceMarker" class="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-yellow-400 shadow shadow-yellow-400/50" style="left: 50%"></div>
+        </div>
+        <div class="text-center">
+          <p class="text-xs text-gray-400 mb-1">Range High</p>
+          <p id="resRangeHigh" class="text-2xl font-bold text-green-400">—</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signal Card -->
+    <div id="signalCard" class="rounded-xl p-5 border-2 transition-all">
+      <p class="text-xs text-gray-400 uppercase tracking-wider mb-2">Trading Signal</p>
+      <p id="signalText" class="text-4xl font-black tracking-widest">—</p>
+    </div>
+
+    <!-- Confidence Bar -->
+    <div class="card rounded-xl p-4">
+      <div class="flex justify-between items-center mb-2">
+        <p class="text-xs text-gray-500 uppercase tracking-wider">Confidence</p>
+        <p id="confidenceValue" class="text-sm font-bold text-yellow-400">—</p>
+      </div>
+      <div class="w-full bg-gray-700 rounded-full h-3">
+        <div id="confidenceBar" class="confidence-bar-fill h-3 rounded-full bg-yellow-500" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Analysis Text -->
+    <div class="card rounded-xl p-4">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">AI Analysis</p>
+      <p id="analysisText" class="text-gray-200 leading-relaxed text-sm">—</p>
+    </div>
+
+  </div>
+
+  <script>
+    async function runAnalysis() {
+      const btn = document.getElementById('analyzeBtn');
+      const loading = document.getElementById('loadingSection');
+      const results = document.getElementById('resultsSection');
+      const errorDiv = document.getElementById('errorSection');
+
+      btn.disabled = true;
+      loading.classList.remove('hidden');
+      results.classList.add('hidden');
+      errorDiv.classList.add('hidden');
+
+      try {
+        const res = await fetch('/analyze', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.error) {
+          errorDiv.textContent = 'Error: ' + data.error;
+          errorDiv.classList.remove('hidden');
+          return;
+        }
+
+        // Fill metadata
+        document.getElementById('resDate').textContent = data.date || 'N/A';
+        document.getElementById('resCurrentPrice').textContent =
+          data.current_price ? data.current_price.toLocaleString() : 'N/A';
+        document.getElementById('resIV').textContent =
+          data.implied_volatility ? data.implied_volatility.toFixed(2) + '%' : 'N/A';
+
+        // Fill range
+        const high = data.range_high || 0;
+        const low = data.range_low || 0;
+        const cur = data.current_price || 0;
+        document.getElementById('resRangeHigh').textContent = high.toLocaleString();
+        document.getElementById('resRangeLow').textContent = low.toLocaleString();
+
+        // Position price marker
+        if (high !== low) {
+          const pct = Math.min(100, Math.max(0, ((cur - low) / (high - low)) * 100));
+          document.getElementById('priceMarker').style.left = pct + '%';
+        }
+
+        // Signal
+        const signal = data.signal || 'HOLD';
+        const signalCard = document.getElementById('signalCard');
+        const signalText = document.getElementById('signalText');
+        signalText.textContent = signal;
+        signalCard.className = 'rounded-xl p-5 border-2 transition-all ';
+        if (signal === 'BUY') {
+          signalCard.classList.add('signal-buy');
+          signalText.className = 'text-4xl font-black tracking-widest text-green-400';
+        } else if (signal === 'SELL') {
+          signalCard.classList.add('signal-sell');
+          signalText.className = 'text-4xl font-black tracking-widest text-red-400';
+        } else {
+          signalCard.classList.add('signal-hold');
+          signalText.className = 'text-4xl font-black tracking-widest text-yellow-400';
+        }
+
+        // Confidence
+        const conf = data.confidence || 0;
+        document.getElementById('confidenceValue').textContent = conf + '%';
+        setTimeout(() => {
+          document.getElementById('confidenceBar').style.width = conf + '%';
+        }, 50);
+
+        // Analysis
+        document.getElementById('analysisText').textContent = data.analysis || 'N/A';
+
+        results.classList.remove('hidden');
+
+      } catch (err) {
+        errorDiv.textContent = 'Network error: ' + err.message;
+        errorDiv.classList.remove('hidden');
+      } finally {
+        loading.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
