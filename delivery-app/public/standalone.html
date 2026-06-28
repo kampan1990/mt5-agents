@@ -146,6 +146,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
           <div class="fg"><label>🛣️ ระยะกิโล</label><input type="number" id="fdist" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updPreview()"></div>
         </div>
         <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
+        <div class="fg"><label>🚗 ค่าเช่ารถ (บาท/วัน)</label><input type="number" id="frent" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
         <div class="fg" id="tp-wrap">
           <label>📷 รูปบิลค่าทางด่วน (แนบในอีเมล์อัตโนมัติ)</label>
           <div id="tpgrid" class="pg">
@@ -245,6 +246,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <div class="fs">
       <div class="fg"><label>ชื่อพนักงานขับรถ</label><input type="text" id="sname" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fg"><label>📧 อีเมล์หัวหน้า (ผู้รับรายงาน)</label><input type="email" id="sboss" placeholder="boss@example.com"></div>
+      <div class="fg"><label>🚗 ค่าเช่ารถต่อวัน (บาท) — ใส่เพื่อหักจากรายได้อัตโนมัติ</label><input type="number" id="srent" placeholder="0" min="0" inputmode="numeric"></div>
     </div>
   </div>
   <div class="card">
@@ -344,11 +346,13 @@ function floorInc(fds){
   return (fds||[]).reduce((s,f)=>{const fl=parseInt(f.floor)||0;const c=parseInt(f.count)||1;return fl>=3?s+(fl-2)*100*c:s},0);
 }
 function calcInc(d){
-  if(d.is_holiday)return{km:0,fl:0,tl:0,tot:0};
+  if(d.is_holiday)return{km:0,fl:0,tl:0,tot:0,rent:0,net:0};
   const km=getRate(parseFloat(d.distance)||0);
   const fl=floorInc(d.floor_deliveries);
   const tl=parseFloat(d.toll_fee)||0;
-  return{km,fl,tl,tot:km+fl+tl};
+  const rent=parseFloat(d.rent_fee)||0;
+  const tot=km+fl+tl;
+  return{km,fl,tl,tot,rent,net:tot-rent};
 }
 
 /* ── Toast ── */
@@ -402,7 +406,8 @@ function loadHome(){
       <div class="ir"><span class="lbl">เขต</span><span class="val">${d.zone||'-'} ${d.province?'/ '+d.province:''}</span></div>
       <div class="ir"><span class="lbl">จำนวนจุด</span><span class="val">${d.point_count||0} จุด</span></div>
       <div class="ir"><span class="lbl">ระยะทาง</span><span class="val">${d.distance||0} กม.</span></div>
-      <div class="ir itot"><span class="lbl">รายได้วันนี้</span><span class="val" style="color:var(--g);font-size:18px">${inc.tot.toLocaleString()} ฿</span></div>`;
+      ${inc.rent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${inc.rent.toLocaleString()} ฿</span></div>`:''}
+      <div class="ir itot"><span class="lbl">รายได้สุทธิวันนี้</span><span class="val" style="color:var(--g);font-size:18px">${inc.net.toLocaleString()} ฿</span></div>`;
     ta.innerHTML=`
       <button class="btn btn-o btn-sm" onclick="editD(${d.id})">✏️ แก้ไข</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 LINE</button>
@@ -448,6 +453,7 @@ function initForm(dEdit){
     document.getElementById('fpts').value=dEdit.point_count||0;
     document.getElementById('fdist').value=dEdit.distance||'';
     document.getElementById('ftoll').value=dEdit.toll_fee||'';
+    document.getElementById('frent').value=dEdit.rent_fee||'';
     document.getElementById('fnotes').value=dEdit.notes||'';
     renderFloors(dEdit.floor_deliveries||[]);
     pendTollPics=DB.getTollPhotos(dEdit.id);
@@ -459,6 +465,7 @@ function initForm(dEdit){
     document.getElementById('fhol').checked=false;
     renderFloors([]);
     pendTollPics=[];
+    if(CFG.rent)document.getElementById('frent').value=CFG.rent;
   }
   togHol();renderPics();renderTollPics();updPreview();
 }
@@ -497,16 +504,19 @@ function getFDs(){
 function updPreview(){
   const dist=parseFloat(document.getElementById('fdist').value)||0;
   const toll=parseFloat(document.getElementById('ftoll').value)||0;
+  const rent=parseFloat(document.getElementById('frent').value)||0;
   const fds=getFDs();
-  const km=getRate(dist);const fl=floorInc(fds);const tot=km+fl+toll;
+  const km=getRate(dist);const fl=floorInc(fds);const tot=km+fl+toll;const net=tot-rent;
   const prev=document.getElementById('prev');
-  if(!dist&&!toll&&!fds.length){prev.style.display='none';return;}
+  if(!dist&&!toll&&!fds.length&&!rent){prev.style.display='none';return;}
   prev.style.display='block';
   document.getElementById('prevrows').innerHTML=`
     <div class="ir"><span class="lbl">เหมาจ่าย (${dist} กม.)</span><span class="val">${km.toLocaleString()} ฿</span></div>
     ${fl?`<div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${fl.toLocaleString()} ฿</span></div>`:''}
     ${toll?`<div class="ir"><span class="lbl">ค่าทางด่วน</span><span class="val">${toll.toLocaleString()} ฿</span></div>`:''}
-    <div class="inet"><span>รวมวันนี้</span><span>${tot.toLocaleString()} ฿</span></div>`;
+    <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${tot.toLocaleString()} ฿</span></div>
+    ${rent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${rent.toLocaleString()} ฿</span></div>`:''}
+    <div class="inet"><span>รายได้สุทธิ</span><span>${net.toLocaleString()} ฿</span></div>`;
 }
 
 /* ── Photos ── */
@@ -556,6 +566,7 @@ document.getElementById('eform').addEventListener('submit',e=>{
     point_count:parseInt(document.getElementById('fpts').value)||0,
     distance:parseFloat(document.getElementById('fdist').value)||0,
     toll_fee:parseFloat(document.getElementById('ftoll').value)||0,
+    rent_fee:parseFloat(document.getElementById('frent').value)||0,
     notes:document.getElementById('fnotes').value,
     floor_deliveries:getFDs(),
     updated:new Date().toISOString()
@@ -612,7 +623,9 @@ function showModal(id){
     <div class="ir"><span class="lbl">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
     <div class="ir"><span class="lbl">ชั้นที่ยกขึ้น/บ้าน</span><span class="val">${inc.fl.toLocaleString()} ฿<br><small style="color:var(--mu)">${flTxt}</small></span></div>
     <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
-    <div class="inet" style="margin:12px 0"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
+    <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${inc.tot.toLocaleString()} ฿</span></div>
+    ${inc.rent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${inc.rent.toLocaleString()} ฿</span></div>`:''}
+    <div class="inet" style="margin:8px 0"><span>รายได้สุทธิ</span><span>${inc.net.toLocaleString()} ฿</span></div>
     ${d.notes?`<p style="font-size:13px;color:var(--mu);margin-bottom:12px">📝 ${d.notes}</p>`:''}
     ${photos.length?`<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--mu);margin-bottom:4px">รูปถ่ายงาน</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${photos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div></div>`:''}
     ${DB.getTollPhotos(id).length?`<div style="margin-bottom:12px"><div style="font-size:12px;color:#e67e22;font-weight:600;margin-bottom:4px">🧾 รูปบิลค่าทางด่วน</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${DB.getTollPhotos(id).map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div></div>`:''}
@@ -781,17 +794,17 @@ function loadSum(){
   if(!start||!end)return;
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
-  let totKm=0,totFl=0,totTl=0,totD=0,totKmDist=0,totPts=0,holD=0;
+  let totKm=0,totFl=0,totTl=0,totRent=0,totD=0,totKmDist=0,totPts=0,holD=0;
   const rows=dels.map(d=>{
     if(d.is_holiday){holD++;return`<div class="ir"><span class="lbl">${fmtShort(d.date)}</span><span class="val mu">🏖️ หยุด</span></div>`;}
     const inc=calcInc(d);
-    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totD++;
+    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRent+=inc.rent;totD++;
     totKmDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
-    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${d.zone||''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.</small></span><span class="val" style="color:var(--g)">${inc.tot.toLocaleString()} ฿</span></div>`;
+    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${d.zone||''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.</small></span><span class="val" style="color:var(--g)">${inc.net.toLocaleString()} ฿</span></div>`;
   }).join('');
   const totInc=totKm+totFl+totTl;
   const taxAmt=totInc*tax;
-  const net=totInc-taxAmt;
+  const net=totInc-totRent-taxAmt;
   const area=document.getElementById('suma');
   area.innerHTML=`
     <div class="inet2">
@@ -802,6 +815,7 @@ function loadSum(){
     <div class="card">
       ${rows}
       <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${totInc.toLocaleString()} ฿</span></div>
+      ${totRent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${totRent.toLocaleString()} ฿</span></div>`:''}
       <div class="ir" style="color:var(--r)"><span class="lbl">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</span><span class="val">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
       <div class="inet" style="margin:12px 16px 16px"><span>รับสุทธิ</span><span>${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
     </div>
@@ -892,12 +906,12 @@ function showTollDownloadModal(pics,date){
 function exportDailyExcel(date){
   const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
   const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
-  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','หมายเหตุ','สถานะ'];
+  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','ค่าเช่ารถ (บาท)','หมายเหตุ','สถานะ'];
   const rows=all.map(d=>{
     const dn=dayNames[new Date(d.date+'T00:00:00').getDay()];
-    if(d.is_holiday)return[d.date,dn,'','','','','','','','หยุด'];
+    if(d.is_holiday)return[d.date,dn,'','','','','','','','','หยุด'];
     const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
-    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,d.notes||'','วิ่งงาน'];
+    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,parseFloat(d.rent_fee)||0,d.notes||'','วิ่งงาน'];
   });
   const driver=CFG.name||'';
   const csv=makeCSV([headers,...rows]);
@@ -1000,14 +1014,14 @@ function buildPDF(start,end,sigData){
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
   const driver=CFG.name||'................................';
-  let totKm=0,totFl=0,totTl=0,totD=0,totDist=0,totPts=0,holD=0;
+  let totKm=0,totFl=0,totTl=0,totRentPDF=0,totD=0,totDist=0,totPts=0,holD=0;
 
   const rows=dels.map((d,i)=>{
     if(d.is_holiday){holD++;
       return`<tr style="background:#f5f5f5"><td>${i+1}</td><td>${d.date}</td><td colspan="5" style="text-align:center;color:#999">วันหยุด</td><td>-</td></tr>`;
     }
     const inc=calcInc(d);
-    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totD++;
+    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRentPDF+=inc.rent;totD++;
     totDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
     const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(',')||'-';
     return`<tr>
@@ -1024,7 +1038,7 @@ function buildPDF(start,end,sigData){
 
   const totInc=totKm+totFl+totTl;
   const taxAmt=totInc*tax;
-  const net=totInc-taxAmt;
+  const net=totInc-totRentPDF-taxAmt;
   const printDate=new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'});
 
   const html=`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
@@ -1096,6 +1110,7 @@ function buildPDF(start,end,sigData){
     <tr><td class="label">ยกของขึ้นชั้น</td><td style="text-align:right">${totFl.toLocaleString()} ฿</td></tr>
     <tr><td class="label">ค่าทางด่วนรวม</td><td style="text-align:right">${totTl.toLocaleString()} ฿</td></tr>
     <tr class="total"><td>รวมรายได้</td><td style="text-align:right">${totInc.toLocaleString()} ฿</td></tr>
+    ${totRentPDF?`<tr><td class="label" style="color:#c0392b">🚗 หัก ค่าเช่ารถ</td><td style="text-align:right;color:#c0392b">- ${totRentPDF.toLocaleString()} ฿</td></tr>`:''}
     <tr><td class="label" style="color:#c0392b">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</td><td style="text-align:right;color:#c0392b">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</td></tr>
     <tr class="net"><td>รับสุทธิ</td><td style="text-align:right">${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</td></tr>
   </table>
@@ -1137,6 +1152,7 @@ function loadCfg(){
   CFG=DB.getSettings();
   document.getElementById('sname').value=CFG.name||'';
   document.getElementById('sboss').value=CFG.boss||'';
+  document.getElementById('srent').value=CFG.rent||'';
   document.getElementById('sfuel').value=CFG.fuel||'r5';
   document.getElementById('stax').value=CFG.tax||'1';
   updFuelPrev();
@@ -1150,6 +1166,7 @@ function saveSettings(){
   CFG={
     name:document.getElementById('sname').value,
     boss:document.getElementById('sboss').value,
+    rent:document.getElementById('srent').value,
     fuel:document.getElementById('sfuel').value,
     tax:document.getElementById('stax').value
   };
