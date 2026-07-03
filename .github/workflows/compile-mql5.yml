@@ -1,0 +1,110 @@
+name: Compile MQL5 (ThreeMagicEA)
+
+on:
+  push:
+    paths:
+      - 'Experts/ThreeMagicEA/**'
+      - '.github/workflows/compile-mql5.yml'
+  pull_request:
+    paths:
+      - 'Experts/ThreeMagicEA/**'
+      - '.github/workflows/compile-mql5.yml'
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MetaTrader 5 (includes MetaEditor + standard MQL5 library)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+          Write-Host "Downloading MT5 installer..."
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\mt5setup.exe"
+
+          Write-Host "Running silent install (/auto)..."
+          Start-Process -FilePath "$env:RUNNER_TEMP\mt5setup.exe" -ArgumentList "/auto" -Wait
+
+          # The web installer may auto-launch the terminal; stop it so the job can proceed.
+          Start-Sleep -Seconds 20
+          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          # Wait for metaeditor64.exe to appear (install downloads files in the background).
+          $candidates = @(
+            "C:\Program Files\MetaTrader 5\metaeditor64.exe",
+            "${env:ProgramFiles}\MetaTrader 5\metaeditor64.exe"
+          )
+          $editor = $null
+          for ($i = 0; $i -lt 30; $i++) {
+            foreach ($c in $candidates) { if (Test-Path $c) { $editor = $c; break } }
+            if ($editor) { break }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $editor) {
+            Write-Host "metaeditor64.exe not found in default locations, searching..."
+            $found = Get-ChildItem -Path "C:\Program Files" -Recurse -Filter "metaeditor64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $editor = $found.FullName }
+          }
+          if (-not $editor) { throw "MetaEditor was not installed" }
+
+          Write-Host "MetaEditor found at: $editor"
+          "MT5_EDITOR=$editor"                                   | Out-File -FilePath $env:GITHUB_ENV -Append
+          "MT5_MQL5=$([System.IO.Path]::Combine((Split-Path $editor), 'MQL5'))" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Compile ThreeMagicEA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $editor  = $env:MT5_EDITOR
+          $mql5    = $env:MT5_MQL5
+          Write-Host "MQL5 root (standard includes): $mql5"
+
+          # Place sources inside the terminal's MQL5\Experts tree so <Trade/...> resolves.
+          $dest = Join-Path $mql5 "Experts\ThreeMagicEA"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Recurse -Force "$env:GITHUB_WORKSPACE\Experts\ThreeMagicEA\*" $dest
+
+          $src = Join-Path $dest "ThreeMagicEA.mq5"
+          $log = Join-Path $env:GITHUB_WORKSPACE "compile.log"
+
+          Write-Host "Compiling $src ..."
+          $p = Start-Process -FilePath $editor `
+                 -ArgumentList "/compile:`"$src`"","/include:`"$mql5`"","/log:`"$log`"" `
+                 -Wait -PassThru -NoNewWindow
+          Write-Host "MetaEditor exit code: $($p.ExitCode)"
+
+          if (-not (Test-Path $log)) { throw "Compile log was not produced" }
+
+          # MetaEditor writes the log as UTF-16.
+          $content = Get-Content -Path $log -Encoding Unicode
+          Write-Host "================ COMPILE LOG ================"
+          $content | ForEach-Object { Write-Host $_ }
+          Write-Host "============================================"
+
+          $errorLines = $content | Where-Object { $_ -match ':\s*error\s' -or $_ -match ' error ' -and $_ -match '\(\d+,\d+\)' }
+          $errCount = ($errorLines | Measure-Object).Count
+
+          if ($errCount -gt 0 -or $p.ExitCode -gt 0) {
+            Write-Host "::error::Compilation failed ($errCount error line(s), exit code $($p.ExitCode))"
+            $errorLines | ForEach-Object { Write-Host "::error::$_" }
+            exit 1
+          }
+          Write-Host "Compilation succeeded (no errors)."
+
+          # copy the built .ex5 back into the workspace for artifact upload
+          $ex5 = Join-Path $dest "ThreeMagicEA.ex5"
+          if (Test-Path $ex5) { Copy-Item -Force $ex5 "$env:GITHUB_WORKSPACE\ThreeMagicEA.ex5" }
+
+      - name: Upload compiled artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThreeMagicEA-ex5
+          path: ThreeMagicEA.ex5
+          if-no-files-found: ignore
