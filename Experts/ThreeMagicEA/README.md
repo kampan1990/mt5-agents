@@ -54,9 +54,9 @@ Experts/ThreeMagicEA/
 
 **ตัวกรอง sideway:** `ADX < ADXSidewayMax` **และ** BB width < `BBWidthMaxPct`
 
-**เข้า:**
-- ราคาแตะ BB บน + `RSI >= RSIOverbought` → grid **Sell limit** ไล่ขึ้น
-- ราคาแตะ BB ล่าง + `RSI <= RSIOversold` → grid **Buy limit** ไล่ลง
+**เข้า:** (straddle limit+stop ฝั่งละ `GridOrders` ไม้ กันพลาดจังหวะเด้ง)
+- ราคาแตะ BB บน + `RSI >= RSIOverbought` → **Sell limit ไล่ขึ้น + Sell stop ไล่ลง**
+- ราคาแตะ BB ล่าง + `RSI <= RSIOversold` → **Buy limit ไล่ลง + Buy stop ไล่ขึ้น**
 
 **ออก:** Basket TP / Basket Stop
 

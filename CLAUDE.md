@@ -30,6 +30,7 @@
 ## กฎบังคับทุก Agent
 
 - **SL/TP บังคับทุก order** — ห้าม trade โดยไม่มี StopLoss/TakeProfit
+  - **ข้อยกเว้น (basket/grid strategies):** กลยุทธ์ประเภท grid/recovery ที่บริหารความเสี่ยงเป็น "ตะกร้า" (เช่น ThreeMagicEA Magic 1 & Magic 2) อนุญาตให้ order รายไม้ไม่มี SL/TP ได้ โดยต้องมี **Basket TP + Basket Stop** ระดับกลุ่ม และอยู่ภายใต้ Max Drawdown เสมอ (per-order SL ขัดกับการเฉลี่ยไม้ของ grid) — กลยุทธ์ที่ไม่ใช่ basket ยังบังคับ SL/TP รายไม้ตามปกติ (เช่น Magic 3 ใช้ SL รายไม้ ATR)
 - **Max Drawdown** — หยุดเทรดเมื่อ drawdown เกิน threshold
 - **Position Sizing** — คำนวณ lot จาก % of balance เสมอ
 - **Error Handling** — ใช้ `GetLastError()` ทุกครั้งที่ส่ง order

@@ -79,15 +79,24 @@ private:
       double center=(side==SIDE_SELL ? m_utils.Bid() : m_utils.Ask());
       double step  =m_utils.PointsToPrice(m_cfg.gridStepPoints);
       string cmt   =StringFormat("M2-%s",(side==SIDE_SELL?"SELL":"BUY"));
-      for(int i=0;i<m_cfg.gridOrders;i++)
+      // Straddle the entry with LIMIT (deeper into the band) + STOP (catches the
+      // reversion bounce) so the setup is not missed when price reverts immediately
+      // instead of pushing further into the extreme.
+      for(int i=1;i<=m_cfg.gridOrders;i++)
         {
          if(side==SIDE_SELL)
-            m_trade.PlacePending(m_cfg.magic,ORDER_TYPE_SELL_LIMIT,center+(i+1)*step,m_cfg.lots,0,0,cmt);
+           {
+            m_trade.PlacePending(m_cfg.magic,ORDER_TYPE_SELL_LIMIT,center+i*step,m_cfg.lots,0,0,cmt);
+            m_trade.PlacePending(m_cfg.magic,ORDER_TYPE_SELL_STOP ,center-i*step,m_cfg.lots,0,0,cmt);
+           }
          else
-            m_trade.PlacePending(m_cfg.magic,ORDER_TYPE_BUY_LIMIT ,center-(i+1)*step,m_cfg.lots,0,0,cmt);
+           {
+            m_trade.PlacePending(m_cfg.magic,ORDER_TYPE_BUY_LIMIT,center-i*step,m_cfg.lots,0,0,cmt);
+            m_trade.PlacePending(m_cfg.magic,ORDER_TYPE_BUY_STOP ,center+i*step,m_cfg.lots,0,0,cmt);
+           }
         }
       m_state=SW_ACTIVE;
-      m_log.Info("M2",StringFormat("RANGE grid %s x%d @ %.5f",
+      m_log.Info("M2",StringFormat("RANGE grid %s x%d/side (limit+stop) @ %.5f",
                  (side==SIDE_SELL?"SELL":"BUY"),m_cfg.gridOrders,center));
      }
 
