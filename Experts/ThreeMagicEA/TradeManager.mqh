@@ -48,21 +48,31 @@ private:
    bool              LogResult(const string ctx,bool ok)
      {
       uint rc=m_trade.ResultRetcode();
-      if(!ok || (rc!=TRADE_RETCODE_DONE && rc!=TRADE_RETCODE_PLACED && rc!=TRADE_RETCODE_DONE_PARTIAL))
+      bool done=(rc==TRADE_RETCODE_DONE || rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE_PARTIAL);
+      if(!ok || !done)
         {
          if(m_log!=NULL)
-            m_log.Error("TRADE",StringFormat("%s FAILED: %s (retcode=%u, lastError=%d)",
-                        ctx,m_trade.ResultRetcodeDescription(),rc,GetLastError()));
-         return false;
+           {
+            string em=StringFormat("%s FAILED: %s (retcode=%u, lastError=%d)",ctx,m_trade.ResultRetcodeDescription(),rc,GetLastError());
+            m_log.Error("TRADE",em);
+           }
+         return(false);
         }
       if(m_log!=NULL)
-         m_log.Info("TRADE",StringFormat("%s OK (retcode=%u, deal=%I64u, order=%I64u)",
-                    ctx,rc,m_trade.ResultDeal(),m_trade.ResultOrder()));
-      return true;
+        {
+         string om=StringFormat("%s OK (retcode=%u, deal=%I64u, order=%I64u)",ctx,rc,m_trade.ResultDeal(),m_trade.ResultOrder());
+         m_log.Info("TRADE",om);
+        }
+      return(true);
      }
 
 public:
-                     CTradeManager(void){ m_utils=NULL; m_log=NULL; m_slippage=30; }
+                     CTradeManager(void)
+     {
+      m_utils=NULL;
+      m_log=NULL;
+      m_slippage=30;
+     }
 
    void              Init(CUtils *utils,CLogger *log,int slippagePoints)
      {
