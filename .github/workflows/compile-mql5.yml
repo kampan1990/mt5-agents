@@ -54,8 +54,46 @@ jobs:
           if (-not $editor) { throw "MetaEditor was not installed" }
 
           Write-Host "MetaEditor found at: $editor"
-          "MT5_EDITOR=$editor"                                   | Out-File -FilePath $env:GITHUB_ENV -Append
-          "MT5_MQL5=$([System.IO.Path]::Combine((Split-Path $editor), 'MQL5'))" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $mt5dir   = Split-Path $editor
+          $terminal = Join-Path $mt5dir "terminal64.exe"
+
+          # The web install ships MetaEditor but the standard MQL5 library
+          # (Include\Trade\*) is materialised in the data folder on first
+          # terminal launch. Run the terminal once to populate it.
+          if (Test-Path $terminal) {
+            Write-Host "Launching terminal once to materialise the standard MQL5 library..."
+            $tp = Start-Process -FilePath $terminal -PassThru
+            Start-Sleep -Seconds 60
+            if ($tp) { Stop-Process -Id $tp.Id -Force -ErrorAction SilentlyContinue }
+            Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+          # Locate the MQL5 root that actually contains the standard Trade library,
+          # searching both the install dir and the per-user data folder.
+          $searchRoots = @(
+            (Join-Path $mt5dir "MQL5"),
+            (Join-Path $env:APPDATA "MetaQuotes\Terminal")
+          )
+          $tradeMqh = $null
+          for ($attempt = 0; $attempt -lt 12 -and -not $tradeMqh; $attempt++) {
+            foreach ($r in $searchRoots) {
+              if (Test-Path $r) {
+                $tradeMqh = Get-ChildItem -Path $r -Recurse -Filter "Trade.mqh" -ErrorAction SilentlyContinue |
+                            Where-Object { $_.FullName -like "*\Include\Trade\Trade.mqh" } |
+                            Select-Object -First 1
+                if ($tradeMqh) { break }
+              }
+            }
+            if (-not $tradeMqh) { Start-Sleep -Seconds 5 }
+          }
+          if (-not $tradeMqh) { throw "Standard MQL5 Include\Trade library not found after install" }
+
+          # ...\MQL5\Include\Trade\Trade.mqh  ->  ...\MQL5
+          $mql5root = Split-Path (Split-Path (Split-Path $tradeMqh.FullName))
+          Write-Host "MQL5 root with standard library: $mql5root"
+
+          "MT5_EDITOR=$editor" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "MT5_MQL5=$mql5root" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Compile ThreeMagicEA
         shell: pwsh
