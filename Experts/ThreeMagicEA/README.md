@@ -78,6 +78,28 @@ Experts/ThreeMagicEA/
 
 ---
 
+## Dashboard (แผงควบคุมบนกราฟ) 🖥️
+
+เปิด/ปิดด้วย `InpShowDashboard` — แสดงเรียลไทม์และกดปุ่มควบคุมได้
+
+**แสดงผล:**
+- หัวข้อ + สัญลักษณ์ + ป้าย `[HALTED]` เมื่อโดน drawdown stop
+- บัญชี: Balance / Equity / Free margin / Floating P/L / Drawdown %
+- แต่ละ magic: state, ทิศ, จำนวน position/pending, P/L (เงิน+จุด), เป้าออก
+
+**ปุ่มควบคุม:**
+| ปุ่ม | ทำงาน |
+|------|-------|
+| `Close` (ต่อ magic) | ปิดทุกไม้ + pending ของ magic นั้นทันที |
+| `ON/OFF` (ต่อ magic) | Pause/Resume — หยุด "เข้าไม้ใหม่" แต่ยัง**บริหารไม้เดิม** (TP/SL/trailing/breakout) ต่อ |
+| `CLOSE ALL` | ปิดทุก magic |
+| `PAUSE ALL` | หยุด/เปิดเข้าไม้ใหม่ทั้ง 3 magic |
+
+ตั้งตำแหน่ง/ขนาดได้: `InpDashCorner`, `InpDashX`, `InpDashY`, `InpDashFontSize`
+(อัปเดตทั้งทุก tick และทุก 1 วินาทีผ่าน timer เพื่อให้สดแม้ตลาดเงียบ)
+
+---
+
 ## Risk / Global
 
 - `MaxAccountDDPct` — เมื่อ account drawdown ถึงเพดาน → หยุดเทรดทุก magic (และปิดทุกไม้ถ้า `CloseAllOnHalt=true`)

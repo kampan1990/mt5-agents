@@ -136,6 +136,14 @@ public:
 
    bool              IsHalted(void) const { return m_halted; }
    void              ResetHalt(void)      { m_halted=false; m_equityPeak=AccountInfoDouble(ACCOUNT_EQUITY); }
+
+   double            EquityPeak(void) const { return m_equityPeak; }
+   double            DrawdownPct(void)
+     {
+      double eq=AccountInfoDouble(ACCOUNT_EQUITY);
+      if(m_equityPeak<=0.0) return 0.0;
+      return (m_equityPeak-eq)/m_equityPeak*100.0;
+     }
   };
 //+------------------------------------------------------------------+
 #endif // THREEMAGIC_RISKMANAGER_MQH

@@ -17,6 +17,33 @@ enum ENUM_SIDE
   };
 
 //+------------------------------------------------------------------+
+//| Uniform status snapshot each strategy reports to the dashboard  |
+//+------------------------------------------------------------------+
+struct MagicStatus
+  {
+   long              magic;
+   string            name;
+   bool              enabled;
+   string            state;
+   ENUM_SIDE         side;
+   int               positions;
+   int               pending;
+   double            pl;       // basket floating P/L (account currency)
+   double            plPts;    // basket floating P/L (points)
+   string            info;     // freeform (exit targets etc.)
+  };
+
+//+------------------------------------------------------------------+
+//| Human-readable side text                                         |
+//+------------------------------------------------------------------+
+string SideText(ENUM_SIDE s)
+  {
+   if(s==SIDE_BUY)  return "BUY";
+   if(s==SIDE_SELL) return "SELL";
+   return "-";
+  }
+
+//+------------------------------------------------------------------+
 //| CUtils - stateless helpers bound to a symbol                    |
 //+------------------------------------------------------------------+
 class CUtils

@@ -16,6 +16,7 @@
 #include "Strategy_Engulfing.mqh"
 #include "Strategy_Sideway.mqh"
 #include "Strategy_Trend.mqh"
+#include "Dashboard.mqh"
 
 //==================================================================
 //  GLOBAL / RISK INPUTS
@@ -26,6 +27,13 @@ input double InpMaxAccountDDPct      = 20.0;    // Account drawdown hard stop (%
 input bool   InpCloseAllOnHalt       = true;    // Flatten everything when halted
 input bool   InpLogToFile            = false;   // Also write log to file
 input ENUM_LOG_LEVEL InpLogLevel     = LOG_INFO;// Minimum log level
+
+input group "===== DASHBOARD ====="
+input bool   InpShowDashboard        = true;    // Show on-chart control panel
+input ENUM_BASE_CORNER InpDashCorner = CORNER_LEFT_UPPER; // Panel corner
+input int    InpDashX                = 12;      // Panel X offset (px)
+input int    InpDashY                = 20;      // Panel Y offset (px)
+input int    InpDashFontSize         = 9;       // Panel font size
 
 //==================================================================
 //  MAGIC 1 - ENGULFING
@@ -99,6 +107,7 @@ CTradeManager      g_trade;
 CStrategyEngulfing g_m1;
 CStrategySideway   g_m2;
 CStrategyTrend     g_m3;
+CDashboard         g_dash;
 bool               g_haltHandled=false;
 
 //+------------------------------------------------------------------+
@@ -191,6 +200,15 @@ int OnInit()
          return INIT_FAILED;
      }
 
+   if(InpShowDashboard)
+     {
+      g_dash.Init(&g_utils,&g_risk,&g_m1,&g_m2,&g_m3,
+                  InpM1_Enable,InpM2_Enable,InpM3_Enable,
+                  InpDashCorner,InpDashX,InpDashY,InpDashFontSize);
+      g_dash.Create();
+      EventSetTimer(1);
+     }
+
    g_log.Info("INIT",StringFormat("ThreeMagicEA started on %s | M1=%s M2=%s M3=%s",
               _Symbol,
               (InpM1_Enable?"on":"off"),
@@ -200,10 +218,33 @@ int OnInit()
   }
 
 //+------------------------------------------------------------------+
+//| Timer - refresh dashboard even when no ticks arrive              |
+//+------------------------------------------------------------------+
+void OnTimer()
+  {
+   if(InpShowDashboard)
+      g_dash.Update();
+  }
+
+//+------------------------------------------------------------------+
+//| Chart events - forward button clicks to the dashboard            |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
+  {
+   if(InpShowDashboard)
+      g_dash.OnChartEvent(id,lparam,dparam,sparam);
+  }
+
+//+------------------------------------------------------------------+
 //| Expert deinitialization                                          |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   if(InpShowDashboard)
+     {
+      EventKillTimer();
+      g_dash.Destroy();
+     }
    if(InpM2_Enable) g_m2.Deinit();
    if(InpM3_Enable) g_m3.Deinit();
    g_log.Info("DEINIT",StringFormat("ThreeMagicEA stopped (reason=%d)",reason));
@@ -232,5 +273,8 @@ void OnTick()
    if(InpM1_Enable) g_m1.OnTick();
    if(InpM2_Enable) g_m2.OnTick();
    if(InpM3_Enable) g_m3.OnTick();
+
+   if(InpShowDashboard)
+      g_dash.Update();
   }
 //+------------------------------------------------------------------+

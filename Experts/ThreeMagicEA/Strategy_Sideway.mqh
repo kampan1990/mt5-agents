@@ -59,6 +59,7 @@ private:
    int               m_bbHandle;
    int               m_rsiHandle;
    int               m_adxHandle;
+   bool              m_enabled;
 
    bool              ReadIndicators(double &upper,double &lower,double &mid,
                                     double &rsi,double &adx)
@@ -100,8 +101,35 @@ public:
                      CStrategySideway(void)
      {
       m_utils=NULL; m_log=NULL; m_risk=NULL; m_trade=NULL;
-      m_state=SW_IDLE; m_lastBar=0; m_cooldownLeft=0;
+      m_state=SW_IDLE; m_lastBar=0; m_cooldownLeft=0; m_enabled=true;
       m_bbHandle=INVALID_HANDLE; m_rsiHandle=INVALID_HANDLE; m_adxHandle=INVALID_HANDLE;
+     }
+
+   //--- runtime control + reporting (dashboard)
+   void              SetEnabled(bool e){ m_enabled=e; }
+   bool              IsEnabled(void) const { return m_enabled; }
+   string            Name(void) const { return "M2 Sideway"; }
+
+   void              CloseAllTrades(void)
+     {
+      m_trade.CloseGroup(m_cfg.magic);
+      m_state=SW_IDLE; m_cooldownLeft=0;
+      m_log.Info("M2","Closed by dashboard");
+     }
+
+   void              GetStatus(MagicStatus &s)
+     {
+      s.magic    =m_cfg.magic;
+      s.name     ="M2 Range";
+      s.enabled  =m_enabled;
+      s.state    =(m_state==SW_IDLE?"IDLE":(m_state==SW_ACTIVE?"ACTIVE":"PAUSED"));
+      s.side     =m_trade.NetSide(m_cfg.magic);
+      s.positions=m_trade.CountPositions(m_cfg.magic);
+      s.pending  =m_trade.CountPending(m_cfg.magic);
+      s.pl       =m_risk.BasketProfit(m_cfg.magic);
+      s.plPts    =m_risk.BasketProfitPoints(m_cfg.magic);
+      s.info     =StringFormat("TP $%.0f/SL $%.0f cd %d",
+                               m_cfg.basketTP,m_cfg.basketSL,m_cooldownLeft);
      }
 
    bool              Init(SidewayConfig &cfg,CUtils *utils,CLogger *log,
@@ -188,7 +216,7 @@ public:
         }
 
       // --- look for a new range entry
-      if(m_state==SW_IDLE)
+      if(m_state==SW_IDLE && m_enabled)
         {
          bool ranging=(adx<m_cfg.adxSidewayMax && widthPct<=m_cfg.bbWidthMaxPct);
          if(!ranging)

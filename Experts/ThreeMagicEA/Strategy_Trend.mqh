@@ -55,6 +55,7 @@ private:
    datetime          m_lastBar;
    ENUM_SIDE         m_side;
    bool              m_partialDone;
+   bool              m_enabled;
    int               m_emaFastH;
    int               m_emaSlowH;
    int               m_adxH;
@@ -188,9 +189,36 @@ public:
                      CStrategyTrend(void)
      {
       m_utils=NULL; m_log=NULL; m_risk=NULL; m_trade=NULL;
-      m_state=TR_FLAT; m_lastBar=0; m_side=SIDE_NONE; m_partialDone=false;
+      m_state=TR_FLAT; m_lastBar=0; m_side=SIDE_NONE; m_partialDone=false; m_enabled=true;
       m_emaFastH=INVALID_HANDLE; m_emaSlowH=INVALID_HANDLE;
       m_adxH=INVALID_HANDLE; m_atrH=INVALID_HANDLE;
+     }
+
+   //--- runtime control + reporting (dashboard)
+   void              SetEnabled(bool e){ m_enabled=e; }
+   bool              IsEnabled(void) const { return m_enabled; }
+   string            Name(void) const { return "M3 Trend"; }
+
+   void              CloseAllTrades(void)
+     {
+      m_trade.CloseGroup(m_cfg.magic);
+      m_state=TR_FLAT; m_side=SIDE_NONE; m_partialDone=false;
+      m_log.Info("M3","Closed by dashboard");
+     }
+
+   void              GetStatus(MagicStatus &s)
+     {
+      s.magic    =m_cfg.magic;
+      s.name     ="M3 Trend";
+      s.enabled  =m_enabled;
+      s.state    =(m_state==TR_FLAT?"FLAT":"WORKING");
+      s.side     =m_side;
+      s.positions=m_trade.CountPositions(m_cfg.magic);
+      s.pending  =m_trade.CountPending(m_cfg.magic);
+      s.pl       =m_risk.BasketProfit(m_cfg.magic);
+      s.plPts    =m_risk.BasketProfitPoints(m_cfg.magic);
+      s.info     =StringFormat("run %d@%.0fpt partial:%s",
+                               m_cfg.keepRunnerCount,m_cfg.runnerTP,(m_partialDone?"done":"wait"));
      }
 
    bool              Init(TrendConfig &cfg,CUtils *utils,CLogger *log,
@@ -260,7 +288,7 @@ public:
         }
 
       // --- hunt for a new pullback only when flat and on a fresh bar
-      if(m_state==TR_FLAT && m_utils.IsNewBar(m_cfg.tf,m_lastBar) && haveInd)
+      if(m_state==TR_FLAT && m_enabled && m_utils.IsNewBar(m_cfg.tf,m_lastBar) && haveInd)
         {
          ENUM_SIDE sig=DetectSignal(emaF,emaS,adx);
          if(sig!=SIDE_NONE)

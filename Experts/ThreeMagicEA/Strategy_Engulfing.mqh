@@ -56,6 +56,7 @@ private:
    ENUM_SIDE         m_activeSide;     // side of the live group
    double            m_triggerPrice;   // price at which armed grid fires
    int               m_recoveryAdds;   // recovery orders added so far
+   bool              m_enabled;        // runtime on/off (dashboard controllable)
 
    //--- detect 3-bar engulfing on the strategy timeframe.
    //--- returns SIDE_SELL for bearish engulfing, SIDE_BUY for bullish, else SIDE_NONE.
@@ -157,7 +158,34 @@ public:
       m_utils=NULL; m_log=NULL; m_risk=NULL; m_trade=NULL;
       m_state=ENG_IDLE; m_lastBar=0;
       m_armedSide=SIDE_NONE; m_activeSide=SIDE_NONE;
-      m_triggerPrice=0.0; m_recoveryAdds=0;
+      m_triggerPrice=0.0; m_recoveryAdds=0; m_enabled=true;
+     }
+
+   //--- runtime control + reporting (dashboard)
+   void              SetEnabled(bool e){ m_enabled=e; }
+   bool              IsEnabled(void) const { return m_enabled; }
+   string            Name(void) const { return "M1 Engulfing"; }
+
+   void              CloseAllTrades(void)
+     {
+      m_trade.CloseGroup(m_cfg.magic);
+      m_state=ENG_IDLE; m_armedSide=SIDE_NONE; m_activeSide=SIDE_NONE; m_recoveryAdds=0;
+      m_log.Info("M1","Closed by dashboard");
+     }
+
+   void              GetStatus(MagicStatus &s)
+     {
+      s.magic    =m_cfg.magic;
+      s.name     ="M1 Engulf";
+      s.enabled  =m_enabled;
+      s.state    =(m_state==ENG_IDLE?"IDLE":(m_state==ENG_ARMED?"ARMED":"ACTIVE"));
+      s.side     =(m_state==ENG_ARMED?m_armedSide:m_activeSide);
+      s.positions=m_trade.CountPositions(m_cfg.magic);
+      s.pending  =m_trade.CountPending(m_cfg.magic);
+      s.pl       =m_risk.BasketProfit(m_cfg.magic);
+      s.plPts    =m_risk.BasketProfitPoints(m_cfg.magic);
+      s.info     =StringFormat("TP $%.0f/SL $%.0f rec %d/%d",
+                               m_cfg.basketTP,m_cfg.basketSL,m_recoveryAdds,m_cfg.recoveryMaxAdds);
      }
 
    void              Init(EngulfingConfig &cfg,CUtils *utils,CLogger *log,
@@ -187,11 +215,11 @@ public:
            {
             if(m_state==ENG_IDLE)
               {
-               Arm(sig,refClose,range2);
+               if(m_enabled) Arm(sig,refClose,range2);
               }
             else if(m_state==ENG_ARMED && sig!=m_armedSide)
               {
-               Arm(sig,refClose,range2);   // re-arm to the newest opposite signal
+               if(m_enabled) Arm(sig,refClose,range2);   // re-arm to the newest opposite signal
               }
             else if(m_state==ENG_ACTIVE && sig!=m_activeSide)
               {
@@ -212,7 +240,7 @@ public:
         }
 
       // 2) armed -> check retrace trigger every tick
-      if(m_state==ENG_ARMED)
+      if(m_state==ENG_ARMED && m_enabled)
         {
          double px=(m_armedSide==SIDE_SELL ? m_utils.Bid() : m_utils.Ask());
          bool hit=(m_armedSide==SIDE_SELL ? (px>=m_triggerPrice) : (px<=m_triggerPrice));
