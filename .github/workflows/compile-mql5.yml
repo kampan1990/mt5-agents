@@ -125,15 +125,23 @@ jobs:
           $content | ForEach-Object { Write-Host $_ }
           Write-Host "============================================"
 
-          $errorLines = $content | Where-Object { $_ -match ':\s*error\s' -or $_ -match ' error ' -and $_ -match '\(\d+,\d+\)' }
-          $errCount = ($errorLines | Measure-Object).Count
+          # Authoritative summary, e.g. "Result: 0 errors, 0 warnings, ..."
+          $resultLine = $content | Where-Object { $_ -match 'Result:\s*\d+\s*error' } | Select-Object -Last 1
+          $errCount = $null
+          if ($resultLine -match 'Result:\s*(\d+)\s*error') { $errCount = [int]$Matches[1] }
 
-          if ($errCount -gt 0 -or $p.ExitCode -gt 0) {
-            Write-Host "::error::Compilation failed ($errCount error line(s), exit code $($p.ExitCode))"
+          # Individual compiler error lines: "file(line,col) : error NNN: ..."
+          $errorLines = $content | Where-Object { $_ -match '\(\d+,\d+\)\s*:\s*error\s' }
+          if ($null -eq $errCount) { $errCount = ($errorLines | Measure-Object).Count }
+
+          # NOTE: MetaEditor's process exit code is unreliable (it returns non-zero
+          # even on a clean compile), so gate purely on the parsed error count.
+          if ($errCount -gt 0) {
+            Write-Host "::error::Compilation failed with $errCount error(s)"
             $errorLines | ForEach-Object { Write-Host "::error::$_" }
             exit 1
           }
-          Write-Host "Compilation succeeded (no errors)."
+          Write-Host "Compilation succeeded ($errCount errors). MetaEditor exit code was $($p.ExitCode) (ignored)."
 
           # copy the built .ex5 back into the workspace for artifact upload
           $ex5 = Join-Path $dest "ThreeMagicEA.ex5"
