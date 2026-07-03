@@ -60,7 +60,7 @@ private:
         }
       if(m_log!=NULL)
         {
-         string om=StringFormat("%s OK (retcode=%u, deal=%I64u, order=%I64u)",ctx,rc,m_trade.ResultDeal(),m_trade.ResultOrder());
+         string om=ctx+" OK (retcode="+(string)rc+", deal="+(string)m_trade.ResultDeal()+", order="+(string)m_trade.ResultOrder()+")";
          m_log.Info("TRADE",om);
         }
       return(true);
@@ -127,7 +127,8 @@ public:
          return false;
       Configure(m_pos.Magic());
       bool ok=m_trade.PositionModify(ticket,sl,tp);
-      return LogResult(StringFormat("ModifyPosition #%I64u sl=%.5f tp=%.5f",ticket,sl,tp),ok);
+      string msg="ModifyPosition #"+(string)ticket+" sl="+DoubleToString(sl,5)+" tp="+DoubleToString(tp,5);
+      return LogResult(msg,ok);
      }
 
    //--------------------------------------------------------------------
@@ -139,7 +140,8 @@ public:
          return false;
       Configure(m_pos.Magic());
       bool ok=m_trade.PositionClose(ticket);
-      return LogResult(StringFormat("ClosePosition #%I64u",ticket),ok);
+      string msg="ClosePosition #"+(string)ticket;
+      return LogResult(msg,ok);
      }
 
    //--- partial close of a position
@@ -149,7 +151,8 @@ public:
          return false;
       Configure(m_pos.Magic());
       bool ok=m_trade.PositionClosePartial(ticket,volume);
-      return LogResult(StringFormat("ClosePartial #%I64u vol=%.2f",ticket,volume),ok);
+      string msg="ClosePartial #"+(string)ticket+" vol="+DoubleToString(volume,2);
+      return LogResult(msg,ok);
      }
 
    int               CloseAllPositions(long magic)
