@@ -67,9 +67,18 @@ namespace SignalReader
       if(!FileIsExist(relativePath, FILE_COMMON))
          return false;
 
+      // REVIEW FIX (mt5-reviewer, medium): the bridge writes JSON with json.dumps(...,
+      // ensure_ascii=False) — i.e. raw UTF-8 bytes, not \uXXXX escapes — so a Thai "reason"
+      // string appears as multi-byte UTF-8 in the file. Opening with FILE_ANSI and the default
+      // codepage (system ANSI code page) decoded those bytes one-at-a-time under the wrong
+      // codepage, mangling any non-ASCII text (JSON structural characters are unaffected since
+      // UTF-8 continuation/lead bytes are always >= 0x80 and never collide with '{','}','"',',',
+      // ':', so parsing itself did not break — only the extracted string content did). Explicit
+      // codepage=CP_UTF8 makes FILE_ANSI decode the bytes correctly as UTF-8.
       int handle = FileOpen(relativePath,
                              FILE_READ | FILE_TXT | FILE_ANSI | FILE_COMMON |
-                             FILE_SHARE_READ | FILE_SHARE_WRITE);
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             0, CP_UTF8);
       if(handle == INVALID_HANDLE)
          return false;
 

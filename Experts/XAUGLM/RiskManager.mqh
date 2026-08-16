@@ -41,18 +41,96 @@ struct SRiskGateResult
 
 namespace RiskManager
   {
-   //--- Persistent (in-EA-process) drawdown kill-switch state. Deliberately static/global,
-   //--- NOT written to a file: per product decision, a tripped kill-switch is reset only by
-   //--- the user manually (EA restart or input toggle) — never automatically. Because these
-   //--- are plain statics, detaching/reattaching the EA (a restart) naturally clears them,
-   //--- which is exactly the intended manual-reset mechanism.
+   //--- In-process mirrors of the persisted state below. Kept as plain statics purely as a
+   //--- fast-path cache; the terminal-level Global Variables (see PersistKey()/LoadPersistentState()
+   //--- below) are the actual source of truth and are what makes the manual-reset policy hold.
+   //---
+   //--- REVIEW FIX (mt5-reviewer, critical): the original implementation relied on these statics
+   //--- ALONE surviving only via "EA restart clears them = manual reset". That is not a safe
+   //--- equivalence — a terminal crash, VPS reboot, Windows update, MT5 auto-update, or power loss
+   //--- also clears in-process statics, none of which is a deliberate operator decision. On a live
+   //--- account that means an unrelated infrastructure restart could SILENTLY un-trip a drawdown
+   //--- kill-switch that fired during a real adverse event, and trading would resume with nobody
+   //--- having decided that was safe. Fixed by persisting tripped/peak state to the terminal's
+   //--- Global Variables store (GlobalVariableSet/Get), which survives process/terminal restarts
+   //--- and is only cleared by ManualResetDrawdownKillSwitch() (explicit operator action via
+   //--- InpConfirmResetDrawdownKillSwitch) or by the operator deleting the Global Variable by hand.
    double g_peakEquity           = 0.0;
    bool   g_ddKillSwitchTripped  = false;
 
    //--- Daily loss tracking, reset automatically at server-time day rollover (this one DOES
    //--- reset on its own by design — see architecture spec — unlike the drawdown kill-switch).
+   //--- REVIEW FIX: also now persisted (see below) — without persistence, a mid-day EA/terminal
+   //--- restart re-seeded g_dayStartBalance from the CURRENT (already-reduced) balance, silently
+   //--- granting a fresh daily-loss allowance after any restart instead of only at day rollover.
    int    g_dailyTrackedDay      = -1; // day-of-year marker; -1 = not initialized yet
    double g_dayStartBalance      = 0.0;
+
+   //--- Scope tag for the Global Variable keys below, set once by LoadPersistentState() (called
+   //--- from OnInit). Binds persisted state to this account+symbol+magic so it can never collide
+   //--- with another EA/account sharing the same terminal installation.
+   string g_persistSymbol = "";
+   int    g_persistMagic  = 0;
+   bool   g_persistReady  = false;
+
+   //=================================================================
+   // Persistent state (terminal Global Variables) — survives terminal/EA restarts.
+   //=================================================================
+
+   //--- Build one persisted-state key, namespaced by account login + symbol + magic number.
+   string PersistKey(const string suffix)
+     {
+      return StringFormat("XAUGLM_%I64d_%s_%d_%s",
+                           AccountInfoInteger(ACCOUNT_LOGIN), g_persistSymbol, g_persistMagic, suffix);
+     }
+
+   //--- Must be called once from OnInit (before any EvaluateGate/CheckDrawdownKillSwitch call).
+   //--- Restores drawdown kill-switch / peak-equity / daily-loss state from the terminal's Global
+   //--- Variables store so a restart of any kind cannot silently clear a tripped kill-switch or a
+   //--- mid-day loss allowance.
+   void LoadPersistentState(const int magicNumber, const string symbol = NULL)
+     {
+      g_persistSymbol = Utils::ResolveSymbol(symbol);
+      g_persistMagic  = magicNumber;
+      g_persistReady  = true;
+
+      if(GlobalVariableCheck(PersistKey("DDTRIP")))
+        {
+         g_ddKillSwitchTripped = (GlobalVariableGet(PersistKey("DDTRIP")) != 0.0);
+         if(g_ddKillSwitchTripped)
+            Logger::Error("RiskManager: drawdown kill-switch restored TRIPPED from persisted terminal "
+                           "state (this survives EA/terminal restarts by design). New order entries "
+                           "remain BLOCKED. Manual reset required: InpConfirmResetDrawdownKillSwitch=true.");
+        }
+      if(GlobalVariableCheck(PersistKey("DDPEAK")))
+         g_peakEquity = GlobalVariableGet(PersistKey("DDPEAK"));
+      if(GlobalVariableCheck(PersistKey("DAY")))
+         g_dailyTrackedDay = (int)GlobalVariableGet(PersistKey("DAY"));
+      if(GlobalVariableCheck(PersistKey("DAYBAL")))
+         g_dayStartBalance = GlobalVariableGet(PersistKey("DAYBAL"));
+     }
+
+   //--- Explicit, operator-driven reset of the drawdown kill-switch. Only ever called from
+   //--- XAUGLM.mq5::OnInit() when InpConfirmResetDrawdownKillSwitch is deliberately set true —
+   //--- never called automatically. Clears both the in-memory flag and the persisted Global
+   //--- Variables so the reset actually sticks across the next restart too.
+   bool ManualResetDrawdownKillSwitch()
+     {
+      if(!g_ddKillSwitchTripped)
+        {
+         Logger::Info("RiskManager: manual kill-switch reset requested but it was not tripped — no-op.");
+         return false;
+        }
+      g_ddKillSwitchTripped = false;
+      g_peakEquity          = 0.0; // reseed from current equity on next CheckDrawdownKillSwitch call
+      GlobalVariableDel(PersistKey("DDTRIP"));
+      GlobalVariableDel(PersistKey("DDPEAK"));
+      GlobalVariableFlush();
+      Logger::Error("RiskManager: DRAWDOWN KILL-SWITCH MANUALLY RESET by operator "
+                     "(InpConfirmResetDrawdownKillSwitch=true). New order entries are allowed again "
+                     "as of now. Remember to set the input back to FALSE.");
+      return true;
+     }
 
    //=================================================================
    // Position sizing
@@ -129,17 +207,27 @@ namespace RiskManager
          g_peakEquity = equity; // first call: seed the peak
 
       if(equity > g_peakEquity)
+        {
          g_peakEquity = equity;
+         if(g_persistReady)
+            GlobalVariableSet(PersistKey("DDPEAK"), g_peakEquity);
+        }
 
       double ddPercent = (g_peakEquity > 0.0) ? ((g_peakEquity - equity) / g_peakEquity * 100.0) : 0.0;
 
       if(!g_ddKillSwitchTripped && ddPercent >= maxDrawdownPercent)
         {
          g_ddKillSwitchTripped = true;
+         if(g_persistReady)
+           {
+            GlobalVariableSet(PersistKey("DDTRIP"), 1.0);
+            GlobalVariableFlush(); // force-persist immediately; this event must survive a crash
+           }
          Logger::Error(StringFormat(
             "RiskManager: DRAWDOWN KILL-SWITCH TRIPPED. peakEquity=%.2f currentEquity=%.2f drawdown=%.2f%% (limit=%.2f%%). "
             "New order entries are now BLOCKED. Existing positions keep their SL/TP untouched. "
-            "Manual reset required (restart EA / toggle input).",
+            "State is now PERSISTED across restarts — manual reset required "
+            "(InpConfirmResetDrawdownKillSwitch=true).",
             g_peakEquity, equity, ddPercent, maxDrawdownPercent));
         }
 
@@ -180,6 +268,11 @@ namespace RiskManager
         {
          g_dailyTrackedDay = dayOfYear;
          g_dayStartBalance = currentBalance;
+         if(g_persistReady)
+           {
+            GlobalVariableSet(PersistKey("DAY"), (double)dayOfYear);
+            GlobalVariableSet(PersistKey("DAYBAL"), g_dayStartBalance);
+           }
          Logger::Info(StringFormat("RiskManager: new trading day, dayStartBalance=%.2f", g_dayStartBalance));
         }
 
@@ -386,10 +479,20 @@ namespace RiskManager
    //--- Native MQL5 economic-calendar based news filter — independent, defense-in-depth
    //--- check on top of the bridge's own news_filter.py. Blocks new entries when a
    //--- HIGH-importance event for the symbol's profit currency (e.g. USD for XAUUSD) falls
-   //--- within +/- newsBufferMinutes of now. Requires terminal Calendar access; if the
-   //--- Calendar API is unavailable (e.g. some tester configurations) it fails safe by
-   //--- logging a warning and NOT blocking, since the bridge-side filter is the primary
-   //--- control and this is a supplementary check.
+   //--- within +/- newsBufferMinutes of now. Requires terminal Calendar access.
+   //---
+   //--- REVIEW FIX (mt5-reviewer, critical): the original implementation failed OPEN (returned
+   //--- "no blackout" / allowed trading) whenever CalendarValueHistory() itself failed, reasoning
+   //--- that bridge/news_filter.py was "the primary control". That reasoning does not hold: as of
+   //--- this review bridge/news_filter.py is an intentional stub that ALWAYS returns "no blackout"
+   //--- (no calendar data source is wired up yet — see news_filter.py's own docstring). That means
+   //--- this native check is, in practice, the ONLY functioning news filter today, and failing open
+   //--- here means a live account could trade straight into high-impact news with zero news
+   //--- protection and no indication anything was skipped. Flipped to fail CLOSED (block new
+   //--- entries) when the Calendar API errors, matching every other filter in this gate. If this
+   //--- blocks unexpectedly in the Strategy Tester (Calendar data can be limited/unavailable there),
+   //--- disable via InpEnableNewsFilter=false for that specific test run rather than relying on the
+   //--- old fail-open behavior in live/demo trading.
    bool IsNewsBlackout(const bool enabled, const int bufferMinutes, const string symbol = NULL)
      {
       if(!enabled)
@@ -406,8 +509,12 @@ namespace RiskManager
       int got = CalendarValueHistory(values, from, to, NULL, profitCurrency);
       if(got < 0)
         {
-         Logger::Warn("RiskManager: CalendarValueHistory unavailable, skipping native news filter (bridge-side filter still applies).");
-         return false;
+         Logger::Error(StringFormat(
+            "RiskManager: CalendarValueHistory failed (err=%d) — native news filter unavailable. "
+            "Failing SAFE: blocking new entries until the Calendar API works again. "
+            "(bridge-side news_filter.py is currently a stub and provides no independent coverage — "
+            "see docs/XAUGLM_ARCHITECTURE.md section 7.)", GetLastError()));
+         return true;
         }
 
       for(int i = 0; i < ArraySize(values); i++)

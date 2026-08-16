@@ -82,9 +82,13 @@ namespace Logger
 
       bool isNewFile = !FileIsExist(csvPathRelative, FILE_COMMON);
 
+      // REVIEW FIX (mt5-reviewer, medium): explicit CP_UTF8 so any non-ASCII text logged here
+      // (e.g. a GLM "reason" string containing Thai, forwarded into a log message) round-trips
+      // correctly instead of being mangled by the system's default ANSI code page — same class
+      // of fix as SignalReader::ReadCommonFile.
       g_fileHandle = FileOpen(csvPathRelative,
-                               FILE_READ | FILE_WRITE | FILE_CSV | FILE_COMMON | FILE_SHARE_READ,
-                               ',');
+                               FILE_READ | FILE_WRITE | FILE_CSV | FILE_COMMON | FILE_SHARE_READ | FILE_ANSI,
+                               ',', CP_UTF8);
       if(g_fileHandle == INVALID_HANDLE)
         {
          Print("[XAUGLM][ERROR] Logger::Init failed to open log file '", csvPathRelative,

@@ -63,6 +63,11 @@ input int    InpNewsBufferMinutes       = 30;      // +/- minutes around a high-
 // --- Safety ---
 input bool   InpEmergencyStop           = false;   // Manual kill-all-new-orders override — checked FIRST always
 input int    InpMagicNumber             = 990120;  // EA magic number
+// REVIEW ADD (mt5-reviewer, critical fix): explicit, logged, operator-only reset path for the
+// persisted drawdown kill-switch (see RiskManager::ManualResetDrawdownKillSwitch). Default MUST
+// stay false. Set true + reload the EA once to reset a tripped kill-switch, then set back to
+// false — leaving it true will re-trigger the reset (harmlessly, but noisily) on every OnInit.
+input bool   InpConfirmResetDrawdownKillSwitch = false; // Set true ONLY to manually clear a tripped drawdown kill-switch, then set back to false
 
 // --- Logging ---
 input ENUM_LOG_LEVEL InpLogLevel        = LOG_INFO;                    // Minimum log level printed/written
@@ -165,6 +170,30 @@ int OnInit()
      {
       Logger::Error("Strategy::Init failed — aborting OnInit.");
       return INIT_FAILED;
+     }
+
+   // --- Restore persisted risk state (drawdown kill-switch / peak equity / daily loss) --------
+   // REVIEW ADD (mt5-reviewer, critical fix): must run before any EvaluateGate call. Without this,
+   // a tripped drawdown kill-switch or a mid-day loss tracker could be silently cleared by any
+   // event that restarts the EA/terminal (crash, VPS reboot, MT5 auto-update, recompile) — not
+   // just a deliberate operator "manual reset". See RiskManager::LoadPersistentState.
+   RiskManager::LoadPersistentState(InpMagicNumber);
+
+   if(InpConfirmResetDrawdownKillSwitch)
+     {
+      if(RiskManager::IsDrawdownKillSwitchTripped())
+        {
+         Logger::Error("OnInit: InpConfirmResetDrawdownKillSwitch=true — performing MANUAL drawdown "
+                        "kill-switch reset now (operator-confirmed). Set this input back to FALSE "
+                        "once confirmed, otherwise it will harmlessly re-fire this reset on every "
+                        "future restart.");
+         RiskManager::ManualResetDrawdownKillSwitch();
+        }
+      else
+        {
+         Logger::Warn("OnInit: InpConfirmResetDrawdownKillSwitch=true but the kill-switch was not "
+                       "tripped — no action taken. Please set this input back to FALSE.");
+        }
      }
 
    EventSetTimer(InpPollIntervalSeconds);
