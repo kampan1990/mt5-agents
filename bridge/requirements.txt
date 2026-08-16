@@ -1,0 +1,11 @@
+# XAUGLM bridge — Python dependencies
+#
+# Core (always required):
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# MT5 market data source (see market_data.py). Only installable/usable on
+# Windows, on the same machine/session as a running MT5 terminal. If you are
+# running the bridge elsewhere, remove this line and implement an alternative
+# data source per the TODO in market_data.py.
+MetaTrader5>=5.0.45
