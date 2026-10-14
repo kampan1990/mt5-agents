@@ -3,6 +3,7 @@
   python main.py fetch    --symbols BTCUSDT --days 180
   python main.py backtest --engine rules
   python main.py backtest --engine claude --days 30 --decision-every 4 --max-calls 200
+  python main.py listing-study --years 2 --include-delisted
   python main.py run                      # testnet / dry-run per .env
   python main.py run --confirm-live       # required when BINANCE_ENV=live
 """
@@ -76,6 +77,24 @@ def cmd_backtest(args, cfg) -> None:
         print(json.dumps({"llm_calls": engine.calls, "llm_cache_hits": engine.cache_hits, "usage": engine.usage}))
 
 
+def cmd_listing_study(args, cfg) -> None:
+    from bot import listing_study as ls
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    frames = ls.collect(args.years, args.include_delisted, cache_dir=args.cache)
+    log.info("collected %d coins; fetching BTC benchmark", len(frames))
+    btc = ls.fetch_btc(args.years)
+    ms, trades = ls.run_study(frames, btc)
+    ms.to_csv(out_dir / "milestones.csv", index=False)
+    trades.to_csv(out_dir / "trades.csv", index=False)
+    ls.summarize(trades).to_csv(out_dir / "config_summary.csv", index=False)
+    (out_dir / "report.md").write_text(ls.render_report(ms, trades, 0.0005, 0.0005), encoding="utf-8")
+    if ls.save_plot(ms, frames, out_dir / "path_after_listing.png"):
+        log.info("plot saved")
+    print(f"done -> {out_dir}/report.md")
+
+
 def cmd_run(args, cfg) -> None:
     if cfg.binance.env == "live" and not args.confirm_live:
         raise SystemExit("BINANCE_ENV=live trades real money. Re-run with --confirm-live if you really mean it.")
@@ -110,6 +129,13 @@ def main(argv=None) -> None:
     b.add_argument("--decision-every", type=int, default=1, help="ask the engine every N bars")
     b.add_argument("--max-calls", type=int, default=None, help="cap on paid LLM calls (cache hits are free)")
 
+    l = sub.add_parser("listing-study", help="study price behaviour after new perpetual listings")
+    l.add_argument("--years", type=float, default=2.0)
+    l.add_argument("--include-delisted", action="store_true",
+                   help="also use data.binance.vision to include contracts that were later delisted (avoids survivorship bias)")
+    l.add_argument("--cache", default="data/listings")
+    l.add_argument("--out", default="reports/listing_study")
+
     r = sub.add_parser("run", help="trade on testnet/live")
     r.add_argument("--engine", choices=["rules", "claude"], default="claude")
     r.add_argument("--dry-run", action="store_true", help="never send orders")
@@ -118,7 +144,7 @@ def main(argv=None) -> None:
 
     args = p.parse_args(argv)
     setup_logging(cfg.log_dir)
-    {"fetch": cmd_fetch, "backtest": cmd_backtest, "run": cmd_run}[args.cmd](args, cfg)
+    {"fetch": cmd_fetch, "backtest": cmd_backtest, "listing-study": cmd_listing_study, "run": cmd_run}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

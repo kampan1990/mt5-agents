@@ -72,6 +72,21 @@ python main.py run --confirm-live
 
 ผล backtest จะออกเป็น JSON (return, max DD, win rate, profit factor, avg R, Sharpe) และรายการเทรดอยู่ใน `logs/backtest_*.csv`
 
+## ศึกษาเหรียญที่เพิ่งลิสต์ (Listing study)
+
+ตรวจสอบสมมติฐาน "เหรียญใหม่พุ่งแล้วร่วง" ด้วยข้อมูลจริง ก่อนจะเขียนกลยุทธ์เทรดเหรียญใหม่
+
+```bash
+python main.py listing-study --years 2 --include-delisted
+# ผลลัพธ์: reports/listing_study/report.md (+ milestones.csv, trades.csv, config_summary.csv, path_after_listing.png)
+```
+
+- ดึงแท่ง 1h แรก ~41 วันของทุก USDT perpetual ที่ลิสต์ในช่วง N ปี และเทียบกับ BTC
+- `--include-delisted` ดึงเหรียญที่ถูกถอดแล้วจาก data.binance.vision เพื่อไม่ให้ผลดีเกินจริง (survivorship bias)
+- จำลองการ short หลังลิสต์ 1–48 ชม. พร้อม SL ตายตัว หลายชุดพารามิเตอร์ และมีการตรวจ out-of-sample
+- ข้อมูลดิบถูก cache ที่ `data/listings/` รันซ้ำได้ไม่ต้องดาวน์โหลดใหม่
+- ไม่รวม funding และสภาพคล่องจริงของเหรียญใหม่ (slippage จริงมักแย่กว่าที่สมมติ)
+
 ## ข้อควรรู้เกี่ยวกับ Claude
 
 - **ค่าใช้จ่าย:** ถ้าถามทุกชั่วโมง 4 เหรียญ จะเป็นประมาณ 96 calls/วัน ปรับ `LLM_EFFORT` (low/medium/high) เพื่อแลกระหว่างคุณภาพกับราคา

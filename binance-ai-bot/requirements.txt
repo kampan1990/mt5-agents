@@ -5,3 +5,4 @@ numpy>=1.26
 pydantic>=2.7
 python-dotenv>=1.0
 pytest>=8
+matplotlib>=3.8   # optional: chart of the median path after listing
