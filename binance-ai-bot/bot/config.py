@@ -80,6 +80,7 @@ class Config:
     leverage: int = 3
     dry_run: bool = True
     log_dir: str = "logs"
+    state_file: str = "data/risk_state.json"   # delete this file to reset a drawdown halt
     risk: RiskConfig = field(default_factory=RiskConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     binance: BinanceConfig = field(default_factory=BinanceConfig)
@@ -93,6 +94,7 @@ def load_config() -> Config:
         leverage=leverage,
         dry_run=_env_bool("DRY_RUN", True),
         log_dir=_env("LOG_DIR", "logs"),
+        state_file=_env("STATE_FILE", "data/risk_state.json"),
         risk=RiskConfig(
             risk_per_trade_pct=_env_float("RISK_PER_TRADE_PCT", 1.0),
             max_leverage=float(leverage),

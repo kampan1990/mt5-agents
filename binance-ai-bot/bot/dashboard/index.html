@@ -1,0 +1,645 @@
+<title>Claude Futures Bot</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+/* Layout: operator's instrument panel. Order of reading = order of urgency:
+   status strip -> risk gauges -> equity + open positions -> what Claude decided and why. */
+:root {
+  --bg: #f1f4f7; --panel: #ffffff; --panel2: #e9eef3; --line: #d8e0e7;
+  --fg: #13202c; --fg2: #3c4b59; --muted: #66768a;
+  --accent: #1f5fd1; --accent-soft: #e2ebfb;
+  --good: #0f7a64; --good-soft: #dcf2ec;
+  --bad: #c2372e; --bad-soft: #fae5e2;
+  --warn: #9a6200; --warn-soft: #fbefd3;
+  --sans: "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151c; --panel: #15202a; --panel2: #1c2833; --line: #2a3745;
+    --fg: #e5ecf2; --fg2: #b2bfcb; --muted: #8192a3;
+    --accent: #6fa3ff; --accent-soft: #1b2e4d;
+    --good: #3dc3a4; --good-soft: #11342c;
+    --bad: #ff7b71; --bad-soft: #3a1d1a;
+    --warn: #e9b24c; --warn-soft: #382d11;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151c; --panel: #15202a; --panel2: #1c2833; --line: #2a3745;
+  --fg: #e5ecf2; --fg2: #b2bfcb; --muted: #8192a3;
+  --accent: #6fa3ff; --accent-soft: #1b2e4d;
+  --good: #3dc3a4; --good-soft: #11342c;
+  --bad: #ff7b71; --bad-soft: #3a1d1a;
+  --warn: #e9b24c; --warn-soft: #382d11;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+.app {
+  max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px;
+  padding-block: 16px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2 { margin: 0; font-weight: 600; }
+h1 { font-size: 18px; letter-spacing: .01em; }
+h2 { font-size: 13px; color: var(--fg2); letter-spacing: .02em; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.up { color: var(--good); } .down { color: var(--bad); }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; }
+.id { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 500 11px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 5px 8px; border-radius: 4px;
+  background: var(--panel2); color: var(--fg2); border: 1px solid var(--line); }
+.chip.live { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+.chip.test { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg2); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); flex: none; }
+.dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.off { background: var(--muted); }
+
+.example { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border: 1px dashed var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--fg); }
+.example b { font-weight: 600; }
+.btn { font: 500 13px var(--sans); color: var(--accent); background: var(--panel); border: 1px solid var(--accent);
+  border-radius: 5px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { background: var(--accent); color: var(--panel); }
+.btn:focus-visible, select:focus-visible, input:focus-visible + .btn, .seg button:focus-visible, .rowtog:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+.dropping::after { content: "วางไฟล์ trades.jsonl ที่นี่"; position: fixed; inset: 0; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); border: 3px dashed var(--accent); font-size: 22px; z-index: 9; }
+
+.alerts { padding: 12px 14px; border-radius: 6px; background: var(--bad-soft); border: 1px solid var(--bad); color: var(--fg); }
+.alerts b { color: var(--bad); }
+.alerts ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* KPI band: one surface, hairline dividers; the gauges carry the risk story */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; min-width: 0; border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); margin: 0 -1px -1px 0; }
+.k-label { font-size: 12px; color: var(--muted); letter-spacing: .03em; }
+.k-val { font: 500 24px/1.2 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.k-val small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.k-sub { font-size: 12px; color: var(--fg2); min-height: 18px; }
+.gauge { height: 6px; border-radius: 3px; background: var(--panel2); margin-top: 4px; overflow: hidden; }
+.gauge .fill { height: 100%; background: var(--accent); border-radius: 3px; min-width: 2px; }
+.gauge.warn .fill { background: var(--warn); } .gauge.bad .fill { background: var(--bad); }
+
+/* panels */
+.grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.ph { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg button { font: 500 12px var(--sans); padding: 4px 10px; border: 0; background: var(--panel); color: var(--fg2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.tip { position: absolute; pointer-events: none; z-index: 2; background: var(--fg); color: var(--bg); font: 12px/1.45 var(--mono);
+  padding: 6px 9px; border-radius: 5px; white-space: nowrap; display: none; }
+.empty { padding: 26px 8px; text-align: center; color: var(--muted); }
+
+/* positions */
+.pos { padding: 12px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.pos:first-of-type { border-top: 0; padding-top: 2px; }
+.pos-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pos-h b { font: 600 14px var(--mono); }
+.pos-m { font: 12px var(--mono); color: var(--fg2); display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.range { position: relative; height: 8px; border-radius: 4px; background: var(--panel2); margin: 6px 0 2px; }
+.range .seg-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.range .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg2); }
+.range .mark { position: absolute; top: -3px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--accent); }
+.range-l { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); }
+
+.pill { display: inline-block; font: 600 11px/1 var(--mono); letter-spacing: .05em; padding: 4px 7px; border-radius: 4px; }
+.pill.LONG { background: var(--good-soft); color: var(--good); } .pill.SHORT { background: var(--bad-soft); color: var(--bad); }
+.pill.CLOSE { background: var(--warn-soft); color: var(--warn); } .pill.HOLD { background: var(--panel2); color: var(--muted); }
+.pill.crit { background: var(--bad-soft); color: var(--bad); } .pill.warnp { background: var(--warn-soft); color: var(--warn); }
+
+/* decision feed */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 12px; color: var(--fg2); }
+select { font: 13px var(--sans); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; }
+label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.dec { padding: 10px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px; }
+.dec-h { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.dec-h .t { font: 12px var(--mono); color: var(--muted); }
+.dec-h b { font: 600 13px var(--mono); }
+.conf { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); }
+.conf i { display: block; width: 44px; height: 5px; border-radius: 3px; background: var(--panel2); overflow: hidden; }
+.conf i s { display: block; height: 100%; background: var(--accent); }
+.plan { font: 12px var(--mono); color: var(--fg2); }
+.out { margin-left: auto; font-size: 12px; color: var(--fg2); }
+.out.ok { color: var(--good); } .out.rej { color: var(--warn); }
+.why { margin: 0; color: var(--fg2); font-size: 13px; max-width: 90ch; }
+.why.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rowtog { all: unset; cursor: pointer; display: block; }
+.more { margin-top: 10px; }
+
+/* side tables */
+.bars { display: flex; flex-direction: column; gap: 9px; }
+.bar-r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; font-size: 13px; }
+.bar-r .tr { grid-column: 1 / -1; height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+.bar-r .tr s { display: block; height: 100%; background: var(--warn); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: right; font-weight: 500; font-size: 12px; color: var(--muted); padding: 0 0 6px 8px; }
+td { text-align: right; padding: 7px 0 7px 8px; border-top: 1px solid var(--line); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+.scroll { overflow-x: auto; }
+.inc { padding: 8px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.inc:first-child { border-top: 0; padding-top: 0; }
+.inc .t { font: 12px var(--mono); color: var(--muted); }
+.note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+
+/* narrow: flatten the two columns so the order is urgency, not source order: chart, positions, decisions, rest */
+@media (max-width: 980px) {
+  .grid { display: flex; flex-direction: column; }
+  .col { display: contents; }
+  .p-chart { order: 1; } .p-pos { order: 2; } .p-feed { order: 3; } .p-rej { order: 4; } .p-sym { order: 5; } .p-inc { order: 6; }
+}
+@media (max-width: 520px) { .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; } .k-val { font-size: 21px; } .out { margin-left: 0; width: 100%; } }
+@media (prefers-reduced-motion: no-preference) { .gauge .fill { transition: width .4s ease; } }
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="id">
+      <h1>Claude Futures Bot</h1>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </header>
+
+  <div class="example" id="example" hidden>
+    <span id="ex-text"></span>
+    <span><input type="file" id="file" accept=".jsonl,.json,.txt" hidden><label class="btn" for="file" tabindex="0" id="filebtn">เลือกไฟล์ log</label></span>
+  </div>
+
+  <section class="alerts" id="alerts" hidden aria-live="polite"></section>
+  <section class="kpis" id="kpis" aria-label="สรุปตัวเลขหลัก"></section>
+
+  <div class="grid">
+    <div class="col">
+      <section class="panel p-chart">
+        <div class="ph">
+          <h2>ทุน (Equity) และ Drawdown</h2>
+          <div class="seg" id="range" role="group" aria-label="ช่วงเวลา">
+            <button data-r="24h" aria-pressed="false">24 ชม.</button>
+            <button data-r="7d" aria-pressed="true">7 วัน</button>
+            <button data-r="all" aria-pressed="false">ทั้งหมด</button>
+          </div>
+        </div>
+        <div class="chart" id="chart"></div>
+        <p class="note" id="chart-note"></p>
+      </section>
+
+      <section class="panel p-feed">
+        <div class="ph">
+          <h2>Claude ตัดสินใจอะไร เพราะอะไร</h2>
+          <div class="filters">
+            <select id="f-sym" aria-label="เหรียญ"><option value="">ทุกเหรียญ</option></select>
+            <select id="f-act" aria-label="การตัดสินใจ">
+              <option value="">ทุกการตัดสินใจ</option><option>LONG</option><option>SHORT</option><option>CLOSE</option><option>HOLD</option>
+            </select>
+            <label class="chk"><input type="checkbox" id="f-hold" checked> ซ่อน HOLD</label>
+          </div>
+        </div>
+        <div id="feed"></div>
+        <button class="btn more" id="more" hidden>แสดงเพิ่ม</button>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel p-pos">
+        <div class="ph"><h2>ตำแหน่งที่เปิดอยู่</h2><span class="muted" id="pos-n"></span></div>
+        <div id="positions"></div>
+      </section>
+      <section class="panel p-rej">
+        <div class="ph"><h2>Risk Manager ปฏิเสธเพราะอะไร</h2></div>
+        <div class="bars" id="rej"></div>
+      </section>
+      <section class="panel p-sym">
+        <div class="ph"><h2>แยกตามเหรียญ</h2></div>
+        <div class="scroll"><table id="symtab"></table></div>
+      </section>
+      <section class="panel p-inc">
+        <div class="ph"><h2>เหตุผิดปกติ</h2></div>
+        <div id="incidents"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  function h(tag, attrs) {
+    var ns = attrs && attrs.ns; var n = ns ? document.createElementNS(NS, tag) : document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k]; if (k === "ns" || v == null || v === false) return;
+      if (k === "class") n.setAttribute("class", v);
+      else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? "" : v);
+    });
+    for (var i = 2; i < arguments.length; i++) append(n, arguments[i]);
+    return n;
+  }
+  function append(n, c) {
+    if (c == null || c === false) return;
+    if (Array.isArray(c)) c.forEach(function (x) { append(n, x); });
+    else n.append(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  var $ = function (s) { return document.querySelector(s); };
+  var S = function (tag, attrs) { attrs = attrs || {}; attrs.ns = true; var a = [tag, attrs]; for (var i = 2; i < arguments.length; i++) a.push(arguments[i]); return h.apply(null, a); };
+
+  var state = { events: [], mode: "demo", next: 0, range: "7d", showN: 25, sym: "", act: "", hideHold: true, expanded: {} };
+  var model = null;
+
+  /* ---------- formatting ---------- */
+  function money(n, d) { return Number(n).toLocaleString("en-US", { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }); }
+  function signed(n, d) { return (n > 0 ? "+" : n < 0 ? "−" : "") + money(Math.abs(n), d); }
+  function price(n) { n = Number(n); var d = n >= 1000 ? 1 : n >= 10 ? 2 : n >= 1 ? 3 : 5; return money(n, d); }
+  function when(t) { return new Date(t).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }); }
+  function ago(ms) {
+    var m = Math.round(ms / 60000); if (m < 1) return "เมื่อสักครู่"; if (m < 60) return m + " นาทีที่แล้ว";
+    var hh = Math.round(m / 60); if (hh < 48) return hh + " ชม.ที่แล้ว"; return Math.round(hh / 24) + " วันที่แล้ว";
+  }
+  function intervalMs(s) { var m = /^(\d+)([mhd])$/.exec(s || "1h"); return m ? (+m[1]) * { m: 60e3, h: 3600e3, d: 86400e3 }[m[2]] : 3600e3; }
+  var REASON = {
+    low_confidence: "ความมั่นใจต่ำกว่าเกณฑ์", low_rr: "R:R ต่ำกว่าเกณฑ์", sl_out_of_range: "ระยะ SL นอกช่วงที่อนุญาต",
+    tp_out_of_range: "ระยะ TP นอกช่วงที่อนุญาต", sl_tp_missing: "ไม่มี SL/TP", max_positions: "เปิดครบจำนวนสูงสุดแล้ว",
+    has_position: "เหรียญนี้มี position อยู่แล้ว", daily_loss: "ขาดทุนวันนี้ถึงขีดจำกัด", halted: "หยุดเทรดเพราะ Max Drawdown",
+    below_min_qty: "ขนาด order ต่ำกว่าขั้นต่ำของ Binance", not_entry: "ไม่ใช่คำสั่งเปิด position", invalid_input: "ข้อมูลราคา/ATR ไม่ถูกต้อง",
+    invalid_sl_tp: "คำนวณ SL/TP ไม่ได้"
+  };
+  var CRIT = { halt: 1, sl_failed: 1, tp_failed: 1, unprotected_position: 1 };
+  var INCIDENT = { halt: "หยุดเทรด (Max Drawdown) และปิดทุก position", sl_failed: "วาง Stop-loss ไม่สำเร็จ ปิด position ทันที",
+    tp_failed: "วาง Take-profit ไม่สำเร็จ ปิด position ทันที", unprotected_position: "พบ position ที่ไม่มี Stop-loss บน exchange จึงปิด",
+    error: "Binance ตอบ error", cycle_error: "รอบทำงานล้มเหลว (บอทยังทำงานต่อ)" };
+
+  /* ---------- derive everything from the event list ---------- */
+  function derive(ev) {
+    var m = { start: null, eq: [], dec: [], opens: {}, results: [], rej: {}, inc: [], sym: {}, marks: [], last: 0 };
+    var lastDec = {};
+    function sy(s) { return m.sym[s] || (m.sym[s] = { n: 0, opened: 0, rejected: 0, last: null, lastT: 0 }); }
+    ev.forEach(function (e) {
+      var t = Date.parse(e.ts); if (!isFinite(t)) return; if (t > m.last) m.last = t;
+      switch (e.event) {
+        case "start": m.start = e; break;
+        case "equity": m.eq.push({ t: t, v: +e.equity, dd: +e.drawdown_pct || 0, dl: +e.daily_loss_pct || 0, halted: !!e.halted, pos: e.positions || [] }); break;
+        case "decision": {
+          var d = Object.assign({}, e, { t: t, outcome: null }); m.dec.push(d); lastDec[e.symbol] = d;
+          var s = sy(e.symbol); s.n++; s.last = e.action; s.lastT = t; break;
+        }
+        case "open": case "dry_run_open": {
+          var dd = lastDec[e.symbol]; if (dd && !dd.outcome) dd.outcome = { kind: e.event === "open" ? "open" : "dry" };
+          m.opens[e.symbol] = { sl: +e.sl, tp: +e.tp, side: e.side, entry: +(e.fill || e.ref_price) };
+          sy(e.symbol).opened++; m.marks.push({ t: t, type: "open", side: e.side, symbol: e.symbol }); break;
+        }
+        case "rejected": {
+          var dr = lastDec[e.symbol]; if (dr && !dr.outcome) dr.outcome = { kind: "rej", code: e.code, reason: e.reason };
+          m.rej[e.code] = (m.rej[e.code] || 0) + 1; sy(e.symbol).rejected++; break;
+        }
+        case "close": case "dry_run_close": {
+          var dc = lastDec[e.symbol]; if (dc && !dc.outcome) dc.outcome = { kind: "closed" };
+          if (e.approx_pnl != null) m.results.push({ symbol: e.symbol, pnl: +e.approx_pnl });
+          m.marks.push({ t: t, type: "close", symbol: e.symbol }); break;
+        }
+        case "position_closed_on_exchange":
+          if (e.approx_pnl != null) m.results.push({ symbol: e.symbol, pnl: +e.approx_pnl });
+          m.marks.push({ t: t, type: "close", symbol: e.symbol }); break;
+        default:
+          if (CRIT[e.event] || e.event === "error" || e.event === "cycle_error") {
+            m.inc.push({ t: t, kind: e.event, crit: !!CRIT[e.event], symbol: e.symbol, detail: e.reason || e.msg || (e.code != null ? "code " + e.code : "") });
+            if (e.event === "halt") m.marks.push({ t: t, type: "halt" });
+          }
+      }
+    });
+    return m;
+  }
+
+  /* ---------- header, status, alerts, KPIs ---------- */
+  function renderHeader() {
+    var st = model.start, chips = $("#chips"); chips.textContent = "";
+    if (st) {
+      chips.append(h("span", { class: "chip " + (st.env === "live" ? "live" : "test") }, st.env === "live" ? "LIVE" : "TESTNET"));
+      chips.append(h("span", { class: "chip" }, st.dry_run ? "DRY RUN" : "ส่ง order จริง"));
+      chips.append(h("span", { class: "chip" }, st.engine));
+      chips.append(h("span", { class: "chip" }, st.interval + " · " + st.leverage + "x"));
+    }
+    var s = $("#status"); s.textContent = "";
+    var lastEq = model.eq[model.eq.length - 1], now = Date.now();
+    var halted = (lastEq && lastEq.halted) || model.inc.some(function (i) { return i.kind === "halt"; });
+    var dot = "good", text;
+    if (state.mode === "demo") { dot = "off"; text = "ตัวอย่างข้อมูล"; }
+    else if (!model.last) { dot = "off"; text = "ยังไม่มี log"; }
+    else if (state.mode === "file") { dot = "off"; text = "จากไฟล์ที่เลือก · ข้อมูลล่าสุด " + when(model.last); }
+    else if (halted) { dot = "bad"; text = "หยุดเทรดแล้ว (Max Drawdown) · " + ago(now - model.last); }
+    else if (now - model.last > intervalMs(model.start && model.start.interval) * 2.5) { dot = "warn"; text = "เงียบผิดปกติ ไม่มีสัญญาณจากบอทมา " + ago(now - model.last).replace(" ที่แล้ว", ""); }
+    else text = "ทำงานอยู่ · อัปเดต " + ago(now - model.last);
+    s.append(h("span", { class: "dot " + dot }), text);
+  }
+
+  function renderAlerts() {
+    var box = $("#alerts"), cut = (state.mode === "live" ? Date.now() : model.last) - 24 * 3600e3;
+    var crit = model.inc.filter(function (i) { return i.crit && i.t >= cut; });
+    box.hidden = !crit.length; box.textContent = "";
+    if (!crit.length) return;
+    box.append(h("b", null, "มีเหตุร้ายแรง " + crit.length + " รายการใน 24 ชม.ที่ผ่านมา"));
+    box.append(h("ul", null, crit.slice(-4).map(function (i) { return h("li", null, when(i.t) + " · " + INCIDENT[i.kind] + (i.symbol ? " (" + i.symbol + ")" : "")); })));
+  }
+
+  function gauge(value, limit, label) {
+    var f = limit > 0 ? Math.min(value / limit, 1) : 0, cls = f >= .8 ? "bad" : f >= .5 ? "warn" : "";
+    return h("div", { class: "gauge " + cls, role: "img", "aria-label": label }, h("div", { class: "fill", style: "width:" + (f * 100) + "%" }));
+  }
+
+  function kpi(label, val, sub, extra) {
+    return h("div", { class: "kpi" }, h("div", { class: "k-label" }, label), h("div", { class: "k-val" }, val), h("div", { class: "k-sub" }, sub), extra);
+  }
+
+  function renderKpis() {
+    var box = $("#kpis"); box.textContent = "";
+    var r = (model.start && model.start.risk) || {}, ddLim = r.max_drawdown_pct || 15, dlLim = r.daily_loss_limit_pct || 4, maxPos = r.max_open_positions || 2;
+    var eq = model.eq, last = eq[eq.length - 1], first = eq[0];
+    if (!last) {
+      ["ทุน", "วันนี้", "Drawdown", "ตำแหน่งที่เปิด", "ผลของไม้ที่ปิดแล้ว"].forEach(function (l) { box.append(kpi(l, "—", l === "ทุน" ? "รอข้อมูลรอบแรกจากบอท" : "")); });
+      return;
+    }
+    var day = new Date(last.t).toISOString().slice(0, 10), base = eq.find(function (p) { return new Date(p.t).toISOString().slice(0, 10) === day; });
+    var todayPct = (last.v / base.v - 1) * 100, since = (last.v / first.v - 1) * 100;
+    box.append(kpi("ทุน (Equity)", [money(last.v), h("small", null, " USDT")],
+      h("span", { class: since >= 0 ? "up" : "down" }, signed(since) + "% ตั้งแต่เริ่มบันทึก")));
+    box.append(kpi("วันนี้ (UTC)", h("span", { class: todayPct >= 0 ? "up" : "down" }, signed(todayPct) + "%"),
+      "ขาดทุนได้ไม่เกิน " + dlLim + "% ต่อวัน", gauge(last.dl, dlLim, "ขาดทุนวันนี้ " + last.dl.toFixed(2) + "% จากขีดจำกัด " + dlLim + "%")));
+    box.append(kpi("Drawdown จากจุดสูงสุด", last.dd.toFixed(2) + "%",
+      last.halted ? h("span", { class: "down" }, "หยุดเทรดแล้ว") : "ปิดทุก position และหยุดที่ " + ddLim + "%",
+      gauge(last.dd, ddLim, "Drawdown " + last.dd.toFixed(2) + "% จากขีดจำกัด " + ddLim + "%")));
+    box.append(kpi("ตำแหน่งที่เปิด", [String(last.pos.length), h("small", null, " / " + maxPos)],
+      last.pos.length ? last.pos.map(function (p) { return p.symbol.replace("USDT", ""); }).join(", ") : "รอจังหวะ"));
+    var res = model.results, wins = res.filter(function (x) { return x.pnl > 0; }).length, tot = res.reduce(function (a, x) { return a + x.pnl; }, 0);
+    box.append(kpi("ผลของไม้ที่ปิดแล้ว ≈", res.length ? Math.round(wins / res.length * 100) + "% ชนะ" : "—",
+      res.length ? [res.length + " ไม้ · รวม ", h("span", { class: tot >= 0 ? "up" : "down" }, signed(tot) + " USDT")] : "ยังไม่มีไม้ที่ปิด"));
+    box.lastChild.title = "ประมาณจากกำไรขาดทุนที่ยังไม่รับรู้ ณ รอบก่อนหน้าที่ SL/TP ถูกแตะ ไม่ใช่ตัวเลขจริงจาก Binance";
+  }
+
+  /* ---------- equity + drawdown chart ---------- */
+  function niceTicks(lo, hi, n) {
+    var span = hi - lo || 1, step = Math.pow(10, Math.floor(Math.log10(span / n))), err = span / n / step;
+    step *= err >= 7 ? 10 : err >= 3 ? 5 : err >= 1.5 ? 2 : 1;
+    var out = [], v = Math.ceil(lo / step) * step; for (; v <= hi + 1e-9; v += step) out.push(v); return out;
+  }
+
+  function renderChart() {
+    var host = $("#chart"); host.textContent = "";
+    var all = model.eq, pts = all, note = $("#chart-note"); note.textContent = "";
+    if (all.length < 2) { host.append(h("div", { class: "empty" }, "ยังไม่มีข้อมูลทุนพอจะวาดกราฟ (ต้องการอย่างน้อย 2 รอบ)")); return; }
+    var endT = all[all.length - 1].t;
+    if (state.range !== "all") { var span = state.range === "24h" ? 86400e3 : 7 * 86400e3; pts = all.filter(function (p) { return p.t >= endT - span; }); }
+    if (pts.length < 2) pts = all.slice(-2);
+    var W = Math.max(host.clientWidth, 280), mg = { l: 62, r: 10, t: 8, b: 20 }, H1 = 210, GAP = 22, H2 = 78, H = mg.t + H1 + GAP + H2 + mg.b;
+    var t0 = pts[0].t, t1 = pts[pts.length - 1].t, vs = pts.map(function (p) { return p.v; });
+    var lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs), pad = (hi - lo) * .08 || hi * .01; lo -= pad; hi += pad;
+    var x = function (t) { return mg.l + (t - t0) / (t1 - t0 || 1) * (W - mg.l - mg.r); };
+    var y = function (v) { return mg.t + (hi - v) / (hi - lo) * H1; };
+    var ddLim = (model.start && model.start.risk && model.start.risk.max_drawdown_pct) || 15;
+    var ddMax = Math.max(ddLim * 1.15, Math.max.apply(null, pts.map(function (p) { return p.dd; })) * 1.1);
+    var y2top = mg.t + H1 + GAP, y2 = function (d) { return y2top + d / ddMax * H2; };
+    var svg = S("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", height: H, role: "img",
+      "aria-label": "กราฟทุนและ drawdown ตั้งแต่ " + when(t0) + " ถึง " + when(t1) });
+
+    niceTicks(lo, hi, 4).forEach(function (v) {
+      svg.append(S("line", { x1: mg.l, x2: W - mg.r, y1: y(v), y2: y(v), stroke: "var(--line)", "stroke-width": 1 }));
+      svg.append(S("text", { x: mg.l - 8, y: y(v) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11, "font-family": "var(--mono)" }, money(v, 0)));
+    });
+    var nx = Math.max(1, Math.min(6, Math.floor(W / 190)));
+    for (var i = 0; i <= nx; i++) {
+      var tt = t0 + (t1 - t0) * i / nx;
+      svg.append(S("text", { x: x(tt), y: H - 4, "text-anchor": i === 0 ? "start" : i === nx ? "end" : "middle", fill: "var(--muted)", "font-size": 11, "font-family": "var(--mono)" }, when(tt)));
+    }
+    var line = pts.map(function (p, k) { return (k ? "L" : "M") + x(p.t).toFixed(1) + " " + y(p.v).toFixed(1); }).join(" ");
+    svg.append(S("path", { d: line + " L" + x(t1).toFixed(1) + " " + (mg.t + H1) + " L" + x(t0).toFixed(1) + " " + (mg.t + H1) + " Z", fill: "var(--accent)", opacity: .1 }));
+    svg.append(S("path", { d: line, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round" }));
+    var lastP = pts[pts.length - 1];
+    svg.append(S("circle", { cx: x(lastP.t), cy: y(lastP.v), r: 4, fill: "var(--accent)", stroke: "var(--panel)", "stroke-width": 2 }));
+
+    // events on the equity line
+    var marks = model.marks.filter(function (k) { return k.t >= t0 && k.t <= t1; });
+    var show = marks.length <= 90 ? marks : marks.filter(function (k) { return k.type === "halt"; });
+    function yAt(t) { var best = pts[0]; for (var j = 0; j < pts.length; j++) { if (Math.abs(pts[j].t - t) < Math.abs(best.t - t)) best = pts[j]; } return y(best.v); }
+    show.forEach(function (k) {
+      var cx = x(k.t), cy = yAt(k.t);
+      if (k.type === "open") {
+        var up = k.side === "LONG", c = up ? "var(--good)" : "var(--bad)";
+        svg.append(S("path", { d: up ? "M" + cx + " " + (cy - 12) + " l-5 9 h10 Z" : "M" + cx + " " + (cy + 12) + " l-5 -9 h10 Z", fill: c }));
+      } else if (k.type === "close") svg.append(S("circle", { cx: cx, cy: cy - 8, r: 3.5, fill: "var(--panel)", stroke: "var(--warn)", "stroke-width": 2 }));
+      else svg.append(S("path", { d: "M" + cx + " " + (cy - 14) + " l6 6 -6 6 -6 -6 Z", fill: "var(--bad)" }));
+    });
+
+    // drawdown panel
+    svg.append(S("text", { x: mg.l - 8, y: y2top + 10, "text-anchor": "end", fill: "var(--muted)", "font-size": 11, "font-family": "var(--mono)" }, "0%"));
+    var dl = y2(ddLim);
+    svg.append(S("line", { x1: mg.l, x2: W - mg.r, y1: y2top, y2: y2top, stroke: "var(--line)" }));
+    svg.append(S("line", { x1: mg.l, x2: W - mg.r, y1: dl, y2: dl, stroke: "var(--bad)", "stroke-dasharray": "4 4", "stroke-width": 1.2 }));
+    svg.append(S("text", { x: W - mg.r, y: dl - 5, "text-anchor": "end", fill: "var(--bad)", "font-size": 11, "font-family": "var(--mono)" }, "ขีดจำกัด −" + ddLim + "% (หยุดเทรด)"));
+    var dd = pts.map(function (p, k) { return (k ? "L" : "M") + x(p.t).toFixed(1) + " " + y2(p.dd).toFixed(1); }).join(" ");
+    svg.append(S("path", { d: dd + " L" + x(t1).toFixed(1) + " " + y2top + " L" + x(t0).toFixed(1) + " " + y2top + " Z", fill: "var(--bad)", opacity: .18 }));
+    svg.append(S("path", { d: dd, fill: "none", stroke: "var(--bad)", "stroke-width": 1.5 }));
+
+    // hover
+    var cross = S("line", { y1: mg.t, y2: y2top + H2, stroke: "var(--fg2)", "stroke-width": 1, "stroke-dasharray": "3 3", visibility: "hidden" });
+    var dot = S("circle", { r: 4.5, fill: "var(--panel)", stroke: "var(--accent)", "stroke-width": 2.5, visibility: "hidden" });
+    var tip = h("div", { class: "tip" });
+    var hit = S("rect", { x: mg.l, y: mg.t, width: W - mg.l - mg.r, height: H - mg.t - mg.b, fill: "transparent", style: "touch-action:pan-y" });
+    function move(ev) {
+      var r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width), tt = t0 + (px - mg.l) / (W - mg.l - mg.r) * (t1 - t0), best = pts[0];
+      for (var j = 0; j < pts.length; j++) if (Math.abs(pts[j].t - tt) < Math.abs(best.t - tt)) best = pts[j];
+      cross.setAttribute("x1", x(best.t)); cross.setAttribute("x2", x(best.t)); cross.setAttribute("visibility", "visible");
+      dot.setAttribute("cx", x(best.t)); dot.setAttribute("cy", y(best.v)); dot.setAttribute("visibility", "visible");
+      tip.textContent = ""; tip.append(when(best.t), h("br"), "ทุน " + money(best.v) + " USDT", h("br"), "Drawdown " + best.dd.toFixed(2) + "%", h("br"), best.pos.length + " position");
+      tip.style.display = "block";
+      var left = x(best.t) + 12; if (left + tip.offsetWidth > W) left = x(best.t) - tip.offsetWidth - 12;
+      tip.style.left = Math.max(0, left) + "px"; tip.style.top = Math.max(0, y(best.v) - 20) + "px";
+    }
+    function leave() { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.style.display = "none"; }
+    hit.addEventListener("pointermove", move); hit.addEventListener("pointerleave", leave);
+    svg.append(cross, dot, hit);
+    host.append(svg, tip);
+    note.textContent = "▲ เปิด LONG · ▼ เปิด SHORT · ○ ปิด position · ◆ หยุดเทรด" + (marks.length > 90 ? " (มีเหตุการณ์มาก จึงแสดงเฉพาะ ◆)" : "");
+  }
+
+  /* ---------- open positions ---------- */
+  function renderPositions() {
+    var box = $("#positions"); box.textContent = "";
+    var last = model.eq[model.eq.length - 1], list = last ? last.pos : [];
+    $("#pos-n").textContent = list.length ? list.length + " ตำแหน่ง" : "";
+    if (!list.length) { box.append(h("div", { class: "empty" }, last ? "ไม่มี position ที่เปิดอยู่ บอทกำลังรอจังหวะ" : "ยังไม่มีข้อมูล")); return; }
+    list.forEach(function (p) {
+      var o = model.opens[p.symbol], hasLv = o && isFinite(o.sl) && isFinite(o.tp) && o.sl !== o.tp, children = [];
+      children.push(h("div", { class: "pos-h" }, h("span", null, h("b", null, p.symbol), " ", h("span", { class: "pill " + p.side }, p.side)),
+        h("b", { class: p.upnl >= 0 ? "up" : "down" }, signed(p.upnl) + " USDT")));
+      children.push(h("div", { class: "pos-m" }, h("span", null, "จำนวน " + Number(p.qty).toLocaleString("en-US", { maximumFractionDigits: 6 })), h("span", null, "เข้า " + price(p.entry)), h("span", null, "ตอนนี้ " + price(p.mark))));
+      if (hasLv) {
+        var f = function (v) { return Math.max(0, Math.min(1, (v - o.sl) / (o.tp - o.sl))); }, a = f(p.entry), b = f(p.mark);
+        children.push(h("div", { class: "range", role: "img", "aria-label": "ราคาปัจจุบันระหว่าง SL " + price(o.sl) + " และ TP " + price(o.tp) },
+          h("div", { class: "seg-fill", style: "left:" + Math.min(a, b) * 100 + "%;width:" + Math.abs(b - a) * 100 + "%;background:" + (p.upnl >= 0 ? "var(--good)" : "var(--bad)") }),
+          h("div", { class: "tick", style: "left:" + a * 100 + "%" }), h("div", { class: "mark", style: "left:" + b * 100 + "%" })));
+        children.push(h("div", { class: "range-l" }, h("span", null, "SL " + price(o.sl)), h("span", null, "TP " + price(o.tp))));
+      } else children.push(h("div", { class: "muted", style: "font-size:12px" }, "ไม่พบระดับ SL/TP ใน log (บอทอาจเพิ่งรีสตาร์ท)"));
+      box.append(h("div", { class: "pos" }, children));
+    });
+  }
+
+  /* ---------- decision feed ---------- */
+  function renderFeed() {
+    var syms = Object.keys(model.sym).sort(), sel = $("#f-sym");
+    if (sel.options.length !== syms.length + 1) { sel.textContent = ""; sel.append(h("option", { value: "" }, "ทุกเหรียญ")); syms.forEach(function (s) { sel.append(h("option", { value: s }, s)); }); sel.value = state.sym; }
+    var rows = model.dec.filter(function (d) {
+      return (!state.sym || d.symbol === state.sym) && (!state.act || d.action === state.act) && !(state.hideHold && !state.act && d.action === "HOLD");
+    }).reverse();
+    var box = $("#feed"); box.textContent = "";
+    if (!rows.length) { box.append(h("div", { class: "empty" }, model.dec.length ? "ไม่มีรายการตามตัวกรองนี้" : "ยังไม่มีการตัดสินใจใน log")); $("#more").hidden = true; return; }
+    rows.slice(0, state.showN).forEach(function (d, i) {
+      var key = d.t + d.symbol, open = !!state.expanded[key], o = d.outcome, outEl = null;
+      if (o) {
+        if (o.kind === "open") outEl = h("span", { class: "out ok" }, "เปิด order แล้ว");
+        else if (o.kind === "dry") outEl = h("span", { class: "out ok" }, "จำลอง (dry run)");
+        else if (o.kind === "closed") outEl = h("span", { class: "out ok" }, "ปิด position");
+        else outEl = h("span", { class: "out rej", title: o.reason || "" }, "ไม่ผ่าน Risk Manager: " + (REASON[o.code] || o.code));
+      } else if (d.action === "LONG" || d.action === "SHORT") outEl = h("span", { class: "out muted" }, "ไม่พบผลใน log");
+      var plan = (d.stop_loss_atr != null && d.take_profit_atr != null) ? h("span", { class: "plan" }, "SL " + d.stop_loss_atr + "×ATR · TP " + d.take_profit_atr + "×ATR") : null;
+      var why = h("p", { class: "why" + (open ? "" : " clamp") }, d.reasoning || "");
+      box.append(h("div", { class: "dec" },
+        h("div", { class: "dec-h" }, h("span", { class: "t" }, when(d.t)), h("b", null, d.symbol), h("span", { class: "pill " + d.action }, d.action),
+          h("span", { class: "conf", title: "ความมั่นใจ" }, h("i", null, h("s", { style: "width:" + Math.round(d.confidence * 100) + "%" })), d.confidence.toFixed(2)), plan, outEl),
+        h("button", { class: "rowtog", "aria-expanded": String(open), onclick: function () { state.expanded[key] = !open; renderFeed(); } }, why)));
+    });
+    var more = $("#more"); more.hidden = rows.length <= state.showN; more.textContent = "แสดงเพิ่ม (เหลือ " + (rows.length - state.showN) + ")";
+  }
+
+  /* ---------- side panels ---------- */
+  function renderSide() {
+    var rej = $("#rej"); rej.textContent = "";
+    var codes = Object.keys(model.rej).sort(function (a, b) { return model.rej[b] - model.rej[a]; }), mx = codes.length ? model.rej[codes[0]] : 1;
+    if (!codes.length) rej.append(h("div", { class: "empty" }, "ยังไม่มีคำสั่งที่ถูกปฏิเสธ"));
+    codes.forEach(function (c) { rej.append(h("div", { class: "bar-r" }, h("span", null, REASON[c] || c), h("span", { class: "mono" }, model.rej[c]), h("div", { class: "tr" }, h("s", { style: "width:" + model.rej[c] / mx * 100 + "%" })))); });
+
+    var tab = $("#symtab"); tab.textContent = "";
+    tab.append(h("thead", null, h("tr", null, h("th", null, "เหรียญ"), h("th", null, "ตัดสินใจ"), h("th", null, "เปิด"), h("th", null, "ปฏิเสธ"), h("th", null, "ล่าสุด"))));
+    var body = h("tbody"); Object.keys(model.sym).sort().forEach(function (s) {
+      var v = model.sym[s]; body.append(h("tr", null, h("td", null, s.replace("USDT", "")), h("td", null, v.n), h("td", null, v.opened), h("td", null, v.rejected), h("td", null, h("span", { class: "pill " + v.last }, v.last))));
+    }); tab.append(body);
+
+    var inc = $("#incidents"); inc.textContent = "";
+    var list = model.inc.slice(-6).reverse();
+    if (!list.length) inc.append(h("div", { class: "empty" }, "ไม่มีเหตุผิดปกติ"));
+    list.forEach(function (i) {
+      inc.append(h("div", { class: "inc" }, h("div", null, h("span", { class: "pill " + (i.crit ? "crit" : "warnp") }, i.crit ? "ร้ายแรง" : "เตือน"), " ", INCIDENT[i.kind] || i.kind, i.symbol ? " · " + i.symbol : ""),
+        i.detail ? h("div", { class: "muted", style: "font-size:12px" }, i.detail) : null, h("div", { class: "t" }, when(i.t))));
+    });
+  }
+
+  function render() {
+    model = derive(state.events);
+    renderHeader(); renderAlerts(); renderKpis(); renderChart(); renderPositions(); renderFeed(); renderSide();
+    var ex = $("#example"), tx = $("#ex-text"); ex.hidden = state.mode === "live"; tx.textContent = "";
+    if (state.mode === "demo") tx.append(h("b", null, "ตัวอย่างข้อมูล "), "สร้างขึ้นเพื่อให้เห็นหน้าตา ไม่ใช่ผลการเทรดจริง วางหรือเลือกไฟล์ ", h("span", { class: "mono" }, "logs/trades.jsonl"), " เพื่อดูของจริง");
+    else if (state.mode === "file") tx.append(h("b", null, "กำลังดูจากไฟล์ที่เลือก "), "ข้อมูลไม่อัปเดตเอง ใช้ปุ่มทางขวาเพื่อเปลี่ยนไฟล์ หรือรัน python main.py dashboard เพื่อดูแบบสด");
+  }
+
+  /* ---------- example data (clearly labelled in the UI) ---------- */
+  function demoEvents() {
+    var seed = 11, rnd = function () { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    var norm = function () { var s = 0; for (var i = 0; i < 6; i++) s += rnd(); return s - 3; };
+    var syms = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"], px = { BTCUSDT: 64000, ETHUSDT: 3100, SOLUSDT: 150, BNBUSDT: 590 }, vol = { BTCUSDT: .006, ETHUSDT: .008, SOLUSDT: .013, BNBUSDT: .007 };
+    var HOURS = 24 * 14, now = Date.now(), t0 = now - HOURS * 3600e3, ev = [], wallet = 10000, peak = wallet, pos = {}, dayBase = wallet, curDay = "";
+    var iso = function (t) { return new Date(t).toISOString(); };
+    var WHY = {
+      LONG: ["1h and 4h trend aligned up, RSI reset to the mid-40s after a pullback, volume above average.", "Price reclaimed EMA50 with a rising MACD histogram; funding is neutral so crowding risk is low."],
+      SHORT: ["Rejected the upper Bollinger band with a bearish engulfing candle while the 4h trend is down.", "Lower highs on both timeframes and MACD histogram turning negative; stop sits above the last swing high."],
+      HOLD: ["No edge: price is chopping around EMA20 and the higher timeframe is flat.", "Trend is up but price is extended 2.4 ATR above EMA20, so a pullback entry is better than chasing.", "Signals disagree across timeframes; waiting for confirmation."],
+      CLOSE: ["Thesis invalidated: price closed back below EMA50 and momentum flipped."]
+    };
+    var pick = function (a) { return a[Math.floor(rnd() * a.length)]; };
+    ev.push({ ts: iso(t0), event: "start", env: "testnet", dry_run: false, symbols: syms, engine: "claude", interval: "1h", leverage: 3,
+      risk: { risk_per_trade_pct: 1, max_drawdown_pct: 15, daily_loss_limit_pct: 4, max_open_positions: 2, min_confidence: .6, min_reward_risk: 1.5 } });
+    for (var i = 1; i <= HOURS; i++) {
+      var t = t0 + i * 3600e3, off = 0, stamp = function () { return iso(t + (off += 700)); };
+      syms.forEach(function (s) { px[s] *= 1 + norm() * vol[s] * .55; });
+      syms.forEach(function (s) {
+        var p = pos[s]; if (!p) return; p.bars++;
+        var sl = p.side === "LONG" ? px[s] <= p.sl : px[s] >= p.sl, tp = p.side === "LONG" ? px[s] >= p.tp : px[s] <= p.tp;
+        if (sl || tp) { var out = sl ? p.sl : p.tp, pnl = (out - p.entry) * p.qty * (p.side === "LONG" ? 1 : -1); wallet += pnl; delete pos[s]; ev.push({ ts: stamp(), event: "position_closed_on_exchange", symbol: s, approx_pnl: pnl }); }
+      });
+      var upnl = 0, open = Object.keys(pos).map(function (s) { var p = pos[s], u = (px[s] - p.entry) * p.qty * (p.side === "LONG" ? 1 : -1); upnl += u; return { symbol: s, side: p.side, qty: p.qty, entry: p.entry, mark: px[s], upnl: u }; });
+      var equity = wallet + upnl, day = iso(t).slice(0, 10); if (day !== curDay) { curDay = day; dayBase = equity; } if (equity > peak) peak = equity;
+      ev.push({ ts: stamp(), event: "equity", equity: equity, peak: peak, drawdown_pct: (peak - equity) / peak * 100, daily_loss_pct: Math.max(0, (dayBase - equity) / dayBase * 100), halted: false, positions: open });
+      if (i === 200) ev.push({ ts: stamp(), event: "sl_failed", symbol: "SOLUSDT", code: -2021, msg: "Order would immediately trigger." });
+      if (i === 275) ev.push({ ts: stamp(), event: "error", symbol: "BNBUSDT", code: -1021, msg: "Timestamp for this request is outside of the recvWindow." });
+      syms.forEach(function (s) {
+        var r = rnd(), has = !!pos[s], act = has ? (r < .05 ? "CLOSE" : "HOLD") : (r < .07 ? "LONG" : r < .12 ? "SHORT" : "HOLD");
+        var conf = act === "HOLD" ? .5 + rnd() * .3 : .45 + rnd() * .45, sl = Math.round((1 + rnd() * 1.4) * 10) / 10, tp = Math.round(sl * (1.3 + rnd() * 1.5) * 10) / 10, atr = px[s] * vol[s];
+        var d = { ts: stamp(), event: "decision", symbol: s, price: px[s], atr: atr, action: act, confidence: Math.round(conf * 100) / 100, reasoning: pick(WHY[act]) };
+        if (act === "LONG" || act === "SHORT") { d.stop_loss_atr = sl; d.take_profit_atr = tp; }
+        ev.push(d);
+        if (act === "CLOSE") { var p = pos[s], pnl = (px[s] - p.entry) * p.qty * (p.side === "LONG" ? 1 : -1); wallet += pnl; delete pos[s]; ev.push({ ts: stamp(), event: "close", symbol: s, side: p.side, qty: p.qty, entry: p.entry, fill: px[s], approx_pnl: pnl, reason: "signal" }); }
+        else if (act === "LONG" || act === "SHORT") {
+          var code = d.confidence < .6 ? "low_confidence" : tp / sl < 1.5 ? "low_rr" : Object.keys(pos).length >= 2 ? "max_positions" : null;
+          if (code) ev.push({ ts: stamp(), event: "rejected", symbol: s, code: code, reason: code });
+          else {
+            var dir = act === "LONG" ? 1 : -1, qty = Math.min(equity * .01 / (sl * atr), equity * 3 / px[s]);
+            pos[s] = { side: act, qty: qty, entry: px[s], sl: px[s] - dir * sl * atr, tp: px[s] + dir * tp * atr, bars: 0 };
+            ev.push({ ts: stamp(), event: "open", symbol: s, side: act, qty: qty, fill: px[s], ref_price: px[s], sl: String(pos[s].sl), tp: String(pos[s].tp), risk: equity * .01 });
+          }
+        }
+      });
+    }
+    return ev;
+  }
+
+  /* ---------- data sources: live server, or a dropped file ---------- */
+  function parseJsonl(text) {
+    var out = []; text.split(/\r?\n/).forEach(function (l) { l = l.trim(); if (!l) return; try { var o = JSON.parse(l); if (o && o.event && o.ts) out.push(o); } catch (e) { /* half-written line */ } });
+    return out;
+  }
+  function loadFile(f) {
+    var r = new FileReader();
+    r.onload = function () { var ev = parseJsonl(String(r.result)); if (!ev.length) { alert_("ไฟล์นี้ไม่มีรายการ log ที่อ่านได้"); return; } state.mode = "file"; state.events = ev; state.showN = 25; render(); };
+    r.readAsText(f);
+  }
+  function alert_(msg) { var b = $("#alerts"); b.hidden = false; b.textContent = msg; }
+
+  function poll() {
+    fetch("/api/events?after=" + state.next, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }).then(function (j) {
+      if (!j || !Array.isArray(j.events)) throw new Error("bad payload");
+      if (state.mode !== "live") { state.mode = "live"; state.events = []; state.next = 0; state.showN = 25; render(); return poll(); }   // never leave example data on screen in live mode
+      if (j.events.length || !model) { state.events = state.events.concat(j.events); state.next = j.next; render(); } else renderHeader();
+    }).catch(function () { /* keep what we have */ });
+  }
+
+  function init() {
+    $("#range").addEventListener("click", function (e) { var b = e.target.closest("button"); if (!b) return; state.range = b.dataset.r; Array.prototype.forEach.call($("#range").children, function (x) { x.setAttribute("aria-pressed", x === b); }); renderChart(); });
+    $("#f-sym").addEventListener("change", function (e) { state.sym = e.target.value; state.showN = 25; renderFeed(); });
+    $("#f-act").addEventListener("change", function (e) { state.act = e.target.value; state.showN = 25; renderFeed(); });
+    $("#f-hold").addEventListener("change", function (e) { state.hideHold = e.target.checked; state.showN = 25; renderFeed(); });
+    $("#more").addEventListener("click", function () { state.showN += 50; renderFeed(); });
+    $("#file").addEventListener("change", function (e) { if (e.target.files[0]) loadFile(e.target.files[0]); });
+    $("#filebtn").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#file").click(); } });
+    ["dragenter", "dragover"].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); document.body.classList.add("dropping"); }); });
+    ["dragleave", "drop"].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); if (n === "drop" || e.target === document.documentElement || !e.relatedTarget) document.body.classList.remove("dropping"); }); });
+    document.addEventListener("drop", function (e) { var f = e.dataTransfer && e.dataTransfer.files[0]; if (f) loadFile(f); });
+    if (window.ResizeObserver) { var rt; new ResizeObserver(function () { clearTimeout(rt); rt = setTimeout(function () { if (model) renderChart(); }, 80); }).observe($("#chart")); }
+
+    state.events = demoEvents(); render();          // first paint: example data, labelled as such
+    poll(); setInterval(function () { if (state.mode === "live") poll(); }, 5000);
+    setInterval(function () { if (model && state.mode === "live") renderHeader(); }, 30000);
+  }
+  init();
+})();
+</script>

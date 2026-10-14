@@ -4,6 +4,7 @@
   python main.py backtest --engine rules
   python main.py backtest --engine claude --days 30 --decision-every 4 --max-calls 200
   python main.py listing-study --years 2 --include-delisted
+  python main.py dashboard                # http://127.0.0.1:8765
   python main.py run                      # testnet / dry-run per .env
   python main.py run --confirm-live       # required when BINANCE_ENV=live
 """
@@ -95,6 +96,20 @@ def cmd_listing_study(args, cfg) -> None:
     print(f"done -> {out_dir}/report.md")
 
 
+def cmd_dashboard(args, cfg) -> None:
+    from bot.dashboard_server import make_server
+
+    journal = Path(cfg.log_dir) / "trades.jsonl"
+    server = make_server(str(journal), args.host, args.port)
+    if args.host not in ("127.0.0.1", "localhost"):
+        log.warning("dashboard has no authentication - %s is reachable by others on the network", args.host)
+    print(f"dashboard: http://{args.host}:{server.server_port}  (reading {journal})  Ctrl+C to stop")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
 def cmd_run(args, cfg) -> None:
     if cfg.binance.env == "live" and not args.confirm_live:
         raise SystemExit("BINANCE_ENV=live trades real money. Re-run with --confirm-live if you really mean it.")
@@ -136,6 +151,10 @@ def main(argv=None) -> None:
     l.add_argument("--cache", default="data/listings")
     l.add_argument("--out", default="reports/listing_study")
 
+    d = sub.add_parser("dashboard", help="serve the monitoring dashboard (reads logs/trades.jsonl)")
+    d.add_argument("--host", default="127.0.0.1")
+    d.add_argument("--port", type=int, default=8765)
+
     r = sub.add_parser("run", help="trade on testnet/live")
     r.add_argument("--engine", choices=["rules", "claude"], default="claude")
     r.add_argument("--dry-run", action="store_true", help="never send orders")
@@ -144,7 +163,7 @@ def main(argv=None) -> None:
 
     args = p.parse_args(argv)
     setup_logging(cfg.log_dir)
-    {"fetch": cmd_fetch, "backtest": cmd_backtest, "listing-study": cmd_listing_study, "run": cmd_run}[args.cmd](args, cfg)
+    {"fetch": cmd_fetch, "backtest": cmd_backtest, "listing-study": cmd_listing_study, "dashboard": cmd_dashboard, "run": cmd_run}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

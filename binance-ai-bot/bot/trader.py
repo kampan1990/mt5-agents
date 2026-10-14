@@ -7,6 +7,7 @@ If the stop-loss cannot be placed, the position is closed immediately.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -35,6 +36,7 @@ class Trader:
         self.journal = journal
         self.risk = RiskManager(cfg.risk)
         self.bars_held: dict[str, int] = {}
+        self.last_upnl: dict[str, float] = {}     # last seen unrealized PnL, used to estimate exchange-side exits
         self.flattened = False
 
     # ---- setup -------------------------------------------------------------
@@ -47,8 +49,18 @@ class Trader:
             if not self.cfg.dry_run:
                 self.ex.set_isolated(sym)
                 self.ex.set_leverage(sym, self.cfg.leverage)
+        if self.risk.load_state(self.cfg.state_file):
+            log.info("restored risk state: peak=%s halted=%s", self.risk.peak_equity, self.risk.halted)
         log.info("ready: env=%s dry_run=%s symbols=%s engine=%s",
                  self.cfg.binance.env, self.cfg.dry_run, self.cfg.symbols, self.engine.name)
+        r = self.cfg.risk
+        self.journal.record(
+            "start", env=self.cfg.binance.env, dry_run=self.cfg.dry_run, symbols=self.cfg.symbols,
+            engine=self.engine.name, interval=self.cfg.interval, leverage=self.cfg.leverage,
+            risk={"risk_per_trade_pct": r.risk_per_trade_pct, "max_drawdown_pct": r.max_drawdown_pct,
+                  "daily_loss_limit_pct": r.daily_loss_limit_pct, "max_open_positions": r.max_open_positions,
+                  "min_confidence": r.min_confidence, "min_reward_risk": r.min_reward_risk},
+        )
 
     # ---- main loop -----------------------------------------------------------
     def run_forever(self) -> None:
@@ -70,6 +82,18 @@ class Trader:
         equity = self.ex.equity()
         positions = self.ex.positions()
         self.risk.update_equity(equity, datetime.now(timezone.utc).date())
+        self.risk.save_state(self.cfg.state_file)
+        self.journal.record(
+            "equity", equity=equity, peak=self.risk.peak_equity,
+            drawdown_pct=round(self.risk.drawdown_pct(equity), 4),
+            daily_loss_pct=round(self.risk.daily_loss_pct(equity), 4), halted=self.risk.halted,
+            positions=[{"symbol": sym, "side": "LONG" if float(r["positionAmt"]) > 0 else "SHORT",
+                        "qty": abs(float(r["positionAmt"])), "entry": float(r["entryPrice"]),
+                        "mark": float(r.get("markPrice") or 0), "upnl": float(r.get("unRealizedProfit") or 0)}
+                       for sym, r in positions.items()],
+        )
+        for sym, r in positions.items():
+            self.last_upnl[sym] = float(r.get("unRealizedProfit") or 0)
         log.info("equity=%.2f dd=%.2f%% daily_loss=%.2f%% open=%d",
                  equity, self.risk.drawdown_pct(equity), self.risk.daily_loss_pct(equity), len(positions))
 
@@ -100,8 +124,9 @@ class Trader:
                                unrealized_pnl=float(raw.get("unRealizedProfit", 0)),
                                bars_held=self.bars_held[sym])
             # every position must be protected by an exchange-side stop-loss
+            # (matched on the serialized order so it does not depend on the algo API's exact field names)
             if not self.cfg.dry_run and not any(
-                o.get("orderType", o.get("type")) == "STOP_MARKET" for o in self.ex.open_algo_orders(sym)
+                "STOP_MARKET" in json.dumps(o) for o in self.ex.open_algo_orders(sym)
             ):
                 log.critical("%s: position has no stop-loss on the exchange - closing it", sym)
                 self.journal.record("unprotected_position", symbol=sym, side=pos.side, qty=pos.qty)
@@ -109,7 +134,9 @@ class Trader:
                 return
         else:
             if self.bars_held.pop(sym, None) is not None:
-                self.journal.record("position_closed_on_exchange", symbol=sym)
+                # SL/TP filled on the exchange; the last unrealized PnL is only an estimate of the result
+                self.journal.record("position_closed_on_exchange", symbol=sym,
+                                    approx_pnl=self.last_upnl.pop(sym, None))
             # SL or TP filled -> the other leg is now an orphan; remove it
             if not self.cfg.dry_run and self.ex.cancel_all_algo_orders(sym):
                 log.info("%s: cancelled orphan SL/TP orders", sym)
@@ -194,8 +221,12 @@ class Trader:
         order = self.ex.market_order(sym, side, rules.round_qty(pos.qty), reduce_only=True)
         self.ex.cancel_all_algo_orders(sym)
         self.bars_held.pop(sym, None)
-        self.journal.record("close", symbol=sym, side=pos.side, reason=reason,
-                            fill=order.get("avgPrice"), entry=pos.entry_price)
+        fill = float(order.get("avgPrice") or 0) or None
+        direction = 1 if pos.side == "LONG" else -1
+        pnl = (fill - pos.entry_price) * pos.qty * direction if fill else None
+        self.journal.record("close", symbol=sym, side=pos.side, reason=reason, qty=pos.qty,
+                            fill=fill, entry=pos.entry_price, approx_pnl=pnl)
+        self.last_upnl.pop(sym, None)
         log.info("%s: closed %s (%s) @ %s", sym, pos.side, reason, order.get("avgPrice"))
 
     def flatten_all(self, positions: Optional[dict[str, dict]] = None) -> None:

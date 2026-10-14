@@ -5,6 +5,8 @@ open carries a stop-loss and take-profit computed here.
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional, Union
@@ -27,6 +29,29 @@ class RiskManager:
         self.day_start_equity: Optional[float] = None
         self.halted = False          # max drawdown hit -> stop trading entirely
         self.halt_reason = ""
+
+    # ---- persistence: a restart must not reset the drawdown guard ------------------
+    def save_state(self, path: str) -> None:
+        state = {"peak_equity": self.peak_equity, "day": self.day.isoformat() if self.day else None,
+                 "day_start_equity": self.day_start_equity, "halted": self.halted, "halt_reason": self.halt_reason}
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        os.replace(tmp, path)
+
+    def load_state(self, path: str) -> bool:
+        try:
+            with open(path, encoding="utf-8") as f:
+                st = json.load(f)
+            self.peak_equity = st.get("peak_equity")
+            self.day = date.fromisoformat(st["day"]) if st.get("day") else None
+            self.day_start_equity = st.get("day_start_equity")
+            self.halted = bool(st.get("halted"))
+            self.halt_reason = st.get("halt_reason", "")
+            return True
+        except (OSError, ValueError, KeyError):
+            return False
 
     # ---- account-level guards -------------------------------------------------
     def update_equity(self, equity: float, today: date) -> None:
