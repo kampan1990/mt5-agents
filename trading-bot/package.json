@@ -1,0 +1,22 @@
+{
+  "name": "ai-trading-bot",
+  "version": "1.0.0",
+  "description": "เว็บบอทเทรดอัตโนมัติ: AI agents แยกหน้าที่ (Market Data, News, Strategy, Risk) + bridge ไป MT5",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "zod": "^4.1.12"
+  }
+}

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Trading Bot</title>
+<style>
+  :root { --bg:#0f1419; --card:#182029; --line:#26313d; --text:#e6edf3; --muted:#8b98a5; --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--line); }
+  h1 { font-size:18px; margin:0; }
+  h2 { font-size:14px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  main { padding:16px; display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); max-width:1400px; margin:auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; overflow:auto; }
+  .wide { grid-column: 1 / -1; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .ok { color:var(--green); } .bad { color:var(--red); } .warn { color:var(--amber); } .muted { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .stats { display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+  .stat b { display:block; font-size:20px; font-variant-numeric: tabular-nums; }
+  button { background:#21262d; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  button:hover { border-color:var(--blue); }
+  button.danger { border-color:var(--red); color:var(--red); }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; }
+  .agent { display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .reason { color:var(--muted); font-size:12px; max-width:420px; }
+  canvas { width:100%; height:160px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🤖 AI Trading Bot</h1>
+    <div id="meta" class="muted"></div>
+  </div>
+  <div class="controls">
+    <button id="btnRun">▶ รันรอบนี้</button>
+    <button id="btnToggle" class="danger">⏸ ปิดการเทรด</button>
+    <button id="btnReset">↺ รีเซ็ต halt</button>
+    <button id="btnToken">🔑 Token</button>
+  </div>
+</header>
+<main>
+  <section class="card">
+    <h2>บัญชี</h2>
+    <div class="stats" id="account"></div>
+  </section>
+  <section class="card">
+    <h2>สถานะ Agents</h2>
+    <div id="agents"></div>
+  </section>
+  <section class="card">
+    <h2>Equity</h2>
+    <canvas id="chart" width="600" height="160"></canvas>
+  </section>
+  <section class="card wide">
+    <h2>สัญญาณล่าสุด</h2>
+    <table><thead><tr><th>เวลา</th><th>สัญลักษณ์</th><th>Action</th><th>Conf.</th><th>Lot</th><th>SL / TP</th><th>ผล</th><th>เหตุผล</th></tr></thead><tbody id="signals"></tbody></table>
+  </section>
+  <section class="card wide">
+    <h2>Positions</h2>
+    <table><thead><tr><th>เปิด</th><th>สัญลักษณ์</th><th>ฝั่ง</th><th>Lot</th><th>Entry</th><th>SL</th><th>TP</th><th>ปิด</th><th>PnL</th></tr></thead><tbody id="positions"></tbody></table>
+  </section>
+  <section class="card wide">
+    <h2>Log</h2>
+    <table><tbody id="logs"></tbody></table>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
