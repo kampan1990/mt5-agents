@@ -105,7 +105,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <div class="sc"><div class="sv" id="s4">-</div><div class="sl">จุดเดือนนี้</div></div>
   </div>
   <div style="padding:0 16px 8px">
-    <button class="btn btn-g btn-sm" style="width:100%" onclick="goPage('reports');setTimeout(()=>{document.querySelectorAll('.tab')[2].click()},100)">📊 ส่งออก Excel ทั้งหมด</button>
+    <button class="btn btn-g btn-sm" style="width:100%" onclick="goPage('reports');setTimeout(()=>{document.querySelectorAll('.tab')[2].click()},100)">📊 ส่งออก CSV (Excel) ทั้งหมด</button>
   </div>
   <div class="card">
     <div class="ct">รายการล่าสุด</div>
@@ -135,7 +135,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
         </div>
         <div class="r2">
           <div class="fg"><label>📍 จำนวนจุดส่ง</label>
-            <select id="fpts" style="appearance:auto">
+            <select id="fpts" style="appearance:auto" onchange="updPreview()">
               <option value="0">เลือกจำนวน</option>
               <option value="1">1 จุด</option><option value="2">2 จุด</option>
               <option value="3">3 จุด</option><option value="4">4 จุด</option>
@@ -144,6 +144,10 @@ input:checked+.tgt:before{transform:translateX(20px)}
             </select>
           </div>
           <div class="fg"><label>🛣️ ระยะกิโล</label><input type="number" id="fdist" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updPreview()"></div>
+        </div>
+        <div class="tgg" style="padding:0;margin-bottom:16px;border:none">
+          <div><div class="tgl-l">🚚 วิ่งต่างจังหวัด</div><div class="tgl-d">บวกเพิ่ม 500 บาท (กทม./ปริมณฑล ใช้ตามเรท) · จุดที่ 7 เป็นต้นไป +100 บาท/จุดอัตโนมัติ</div></div>
+          <label class="tgl"><input type="checkbox" id="fup" onchange="updPreview()"><span class="tgt"></span></label>
         </div>
         <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
         <div class="fg"><label>🚗 ค่าเช่ารถ (บาท/วัน)</label><input type="number" id="frent" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
@@ -198,7 +202,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
   <div class="tabs">
     <button class="tab active" onclick="swTab('daily',this)">รายวัน</button>
     <button class="tab" onclick="swTab('sum',this)">สรุป 15 วัน</button>
-    <button class="tab" onclick="swTab('excel',this)">📊 Excel</button>
+    <button class="tab" onclick="swTab('excel',this)">📊 CSV</button>
   </div>
   <div id="tab-daily">
     <div class="card"><div class="fs">
@@ -211,8 +215,8 @@ input:checked+.tgt:before{transform:translateX(20px)}
   <div id="tab-excel" style="display:none">
     <div class="card">
       <div style="padding:16px">
-        <p style="font-size:14px;font-weight:600;margin-bottom:12px">📊 ส่งออกไฟล์ Excel</p>
-        <p class="mu" style="margin-bottom:16px;font-size:13px">รวมข้อมูลทุกวันไว้ในไฟล์เดียว เปิดได้บน Microsoft Excel / Google Sheets</p>
+        <p style="font-size:14px;font-weight:600;margin-bottom:12px">📊 ส่งออกไฟล์ CSV</p>
+        <p class="mu" style="margin-bottom:16px;font-size:13px">รวมข้อมูลทุกวันไว้ในไฟล์เดียว เป็นไฟล์ .csv เปิดได้บน Microsoft Excel / Google Sheets</p>
         <div class="r2" style="margin-bottom:12px">
           <div class="fg"><label>จากวันที่</label><input type="date" id="xl-start"></div>
           <div class="fg"><label>ถึงวันที่</label><input type="date" id="xl-end"></div>
@@ -246,6 +250,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <div class="fs">
       <div class="fg"><label>ชื่อพนักงานขับรถ</label><input type="text" id="sname" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fg"><label>📧 อีเมล์หัวหน้า (ผู้รับรายงาน)</label><input type="email" id="sboss" placeholder="boss@example.com"></div>
+      <div class="fg"><label>🚚 ชื่อรถ/สาย (แสดงในข้อความรายงาน)</label><input type="text" id="struck" placeholder="Nitori Truck No.2"></div>
       <div class="fg"><label>🚗 ค่าเช่ารถต่อวัน (บาท) — ใส่เพื่อหักจากรายได้อัตโนมัติ</label><input type="number" id="srent" placeholder="0" min="0" inputmode="numeric"></div>
     </div>
   </div>
@@ -269,6 +274,18 @@ input:checked+.tgt:before{transform:translateX(20px)}
   <div class="card">
     <div class="ct">🧾 ภาษี</div>
     <div class="fs"><div class="fg"><label>หัก ณ ที่จ่าย (%)</label><input type="number" id="stax" value="1" min="0" max="100" step="0.5"></div></div>
+  </div>
+  <div class="card">
+    <div class="ct">💾 สำรอง/กู้คืนข้อมูล</div>
+    <div class="fs">
+      <p class="mu" style="font-size:12px;margin-bottom:10px">ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ถ้าล้างข้อมูลเบราว์เซอร์จะหาย ควรสำรองเป็นระยะ</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-g btn-sm" onclick="backupAll()">⬇️ สำรองข้อมูล</button>
+        <button class="btn btn-o btn-sm" onclick="document.getElementById('restore-in').click()">⬆️ กู้คืน</button>
+      </div>
+      <input type="file" id="restore-in" accept="application/json,.json" style="display:none" onchange="restoreAll(this)">
+      <div id="stinfo" class="mu" style="font-size:12px;margin-top:8px"></div>
+    </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
   <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v1.0 · NITORI Delivery Report App</div>
@@ -331,6 +348,10 @@ const NT=[
   {mn:501,mx:520,r0:4805,r1:4982,r2:4982,r3:5060,r4:5141,r5:5245}
 ];
 
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const UP_FEE=500;      // วิ่งต่างจังหวัด บวกเพิ่มต่อวัน
+const PT7_FEE=100;     // จุดที่ 7 เป็นต้นไป จุดละ 100 บาท
+const PT7_MIN=7;
 let CFG = {};
 let pendPics = [];
 let pendTollPics = [];
@@ -346,13 +367,15 @@ function floorInc(fds){
   return (fds||[]).reduce((s,f)=>{const fl=parseInt(f.floor)||0;const c=parseInt(f.count)||1;return fl>=3?s+(fl-2)*100*c:s},0);
 }
 function calcInc(d){
-  if(d.is_holiday)return{km:0,fl:0,tl:0,tot:0,rent:0,net:0};
+  if(d.is_holiday)return{km:0,fl:0,tl:0,up:0,pt:0,tot:0,rent:0,net:0};
   const km=getRate(parseFloat(d.distance)||0);
   const fl=floorInc(d.floor_deliveries);
   const tl=parseFloat(d.toll_fee)||0;
   const rent=parseFloat(d.rent_fee)||0;
-  const tot=km+fl+tl;
-  return{km,fl,tl,tot,rent,net:tot-rent};
+  const up=d.upcountry?UP_FEE:0;
+  const pt=Math.max(0,(parseInt(d.point_count)||0)-PT7_MIN+1)*PT7_FEE;
+  const tot=km+fl+tl+up+pt;
+  return{km,fl,tl,up,pt,tot,rent,net:tot-rent};
 }
 
 /* ── Toast ── */
@@ -377,6 +400,7 @@ function goPage(n){
 
 /* ── Dates ── */
 function todayStr(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function dStr(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function fmtTH(ds){
   const d=new Date(ds+'T00:00:00');
   const dy=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
@@ -403,7 +427,7 @@ function loadHome(){
   } else {
     const inc=calcInc(d);
     ts.innerHTML=`
-      <div class="ir"><span class="lbl">เขต</span><span class="val">${d.zone||'-'} ${d.province?'/ '+d.province:''}</span></div>
+      <div class="ir"><span class="lbl">เขต</span><span class="val">${esc(d.zone)||'-'} ${d.province?'/ '+d.province:''}</span></div>
       <div class="ir"><span class="lbl">จำนวนจุด</span><span class="val">${d.point_count||0} จุด</span></div>
       <div class="ir"><span class="lbl">ระยะทาง</span><span class="val">${d.distance||0} กม.</span></div>
       ${inc.rent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${inc.rent.toLocaleString()} ฿</span></div>`:''}
@@ -411,7 +435,8 @@ function loadHome(){
     ta.innerHTML=`
       <button class="btn btn-o btn-sm" onclick="editD(${d.id})">✏️ แก้ไข</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 LINE</button>
-      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${today}')">📊 Excel+รูปบิล</button>`;
+      <button class="btn btn-g btn-sm" onclick="emailDay('${today}')">📧 อีเมล์</button>
+      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${today}')">📊 CSV+รูปบิล</button>`;
   }
   // Month stats
   const now=new Date();
@@ -435,7 +460,7 @@ function diHTML(d){
   const inc=calcInc(d);
   return`<div class="di" onclick="showModal(${d.id})">
     <div class="dd">${dl}</div>
-    <div class="dif"><div class="dz">${d.zone||'-'}${d.province?' / '+d.province:''}</div><div class="dm">${d.point_count||0} จุด · ${d.distance||0} กม.</div></div>
+    <div class="dif"><div class="dz">${esc(d.zone)||'-'}${d.province?' / '+esc(d.province):''}</div><div class="dm">${d.point_count||0} จุด · ${d.distance||0} กม.</div></div>
     <div class="dii">${inc.tot.toLocaleString()}฿</div>
   </div>`;
 }
@@ -450,6 +475,7 @@ function initForm(dEdit){
     document.getElementById('fhol').checked=!!dEdit.is_holiday;
     document.getElementById('fzone').value=dEdit.zone||'';
     document.getElementById('fprov').value=dEdit.province||'';
+    document.getElementById('fup').checked=!!dEdit.upcountry;
     document.getElementById('fpts').value=dEdit.point_count||0;
     document.getElementById('fdist').value=dEdit.distance||'';
     document.getElementById('ftoll').value=dEdit.toll_fee||'';
@@ -463,6 +489,7 @@ function initForm(dEdit){
     document.getElementById('eform').reset();
     document.getElementById('fdate').value=todayStr();
     document.getElementById('fhol').checked=false;
+    document.getElementById('fup').checked=false;
     renderFloors([]);
     pendTollPics=[];
     if(CFG.rent)document.getElementById('frent').value=CFG.rent;
@@ -506,13 +533,18 @@ function updPreview(){
   const toll=parseFloat(document.getElementById('ftoll').value)||0;
   const rent=parseFloat(document.getElementById('frent').value)||0;
   const fds=getFDs();
-  const km=getRate(dist);const fl=floorInc(fds);const tot=km+fl+toll;const net=tot-rent;
+  const pts=parseInt(document.getElementById('fpts').value)||0;
+  const km=getRate(dist);const fl=floorInc(fds);
+  const up=document.getElementById('fup').checked?UP_FEE:0;const pt=Math.max(0,pts-PT7_MIN+1)*PT7_FEE;
+  const tot=km+fl+toll+up+pt;const net=tot-rent;
   const prev=document.getElementById('prev');
-  if(!dist&&!toll&&!fds.length&&!rent){prev.style.display='none';return;}
+  if(!dist&&!toll&&!fds.length&&!rent&&!up&&!pt){prev.style.display='none';return;}
   prev.style.display='block';
   document.getElementById('prevrows').innerHTML=`
     <div class="ir"><span class="lbl">เหมาจ่าย (${dist} กม.)</span><span class="val">${km.toLocaleString()} ฿</span></div>
     ${fl?`<div class="ir"><span class="lbl">ยกของขึ้นชั้น</span><span class="val">${fl.toLocaleString()} ฿</span></div>`:''}
+    ${up?`<div class="ir"><span class="lbl">🚚 ต่างจังหวัด</span><span class="val">${up.toLocaleString()} ฿</span></div>`:''}
+    ${pt?`<div class="ir"><span class="lbl">📍 จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${pt.toLocaleString()} ฿</span></div>`:''}
     ${toll?`<div class="ir"><span class="lbl">ค่าทางด่วน</span><span class="val">${toll.toLocaleString()} ฿</span></div>`:''}
     <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${tot.toLocaleString()} ฿</span></div>
     ${rent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${rent.toLocaleString()} ฿</span></div>`:''}
@@ -522,11 +554,7 @@ function updPreview(){
 /* ── Photos ── */
 function addPics(inp){
   const files=Array.from(inp.files);
-  files.forEach(f=>{
-    const r=new FileReader();
-    r.onload=e=>{pendPics.push(e.target.result);renderPics();}
-    r.readAsDataURL(f);
-  });
+  files.forEach(f=>shrinkImg(f,d=>{pendPics.push(d);renderPics();}));
   inp.value='';
 }
 function renderPics(){
@@ -537,11 +565,7 @@ function renderPics(){
 function rmPic(i){pendPics.splice(i,1);renderPics();}
 
 function addTollPics(inp){
-  Array.from(inp.files).forEach(f=>{
-    const r=new FileReader();
-    r.onload=e=>{pendTollPics.push(e.target.result);renderTollPics();}
-    r.readAsDataURL(f);
-  });
+  Array.from(inp.files).forEach(f=>shrinkImg(f,d=>{pendTollPics.push(d);renderTollPics();}));
   inp.value='';
 }
 function renderTollPics(){
@@ -563,6 +587,7 @@ document.getElementById('eform').addEventListener('submit',e=>{
     is_holiday:isHol,
     zone:document.getElementById('fzone').value,
     province:document.getElementById('fprov').value,
+    upcountry:document.getElementById('fup').checked,
     point_count:parseInt(document.getElementById('fpts').value)||0,
     distance:parseFloat(document.getElementById('fdist').value)||0,
     toll_fee:parseFloat(document.getElementById('ftoll').value)||0,
@@ -574,14 +599,19 @@ document.getElementById('eform').addEventListener('submit',e=>{
   const dels=DB.getDeliveries();
   const idx=dels.findIndex(x=>x.id===del.id);
   if(idx>=0)dels[idx]=del; else dels.push(del);
-  DB.saveDeliveries(dels);
-  if(pendPics.length){
-    const existing=DB.getPhotos(del.id);
-    DB.savePhotos(del.id,[...existing,...pendPics]);
-  }
-  if(pendTollPics.length){
-    const existing=DB.getTollPhotos(del.id);
-    DB.saveTollPhotos(del.id,[...existing,...pendTollPics]);
+  try{
+    DB.saveDeliveries(dels);
+    if(pendPics.length){
+      const existing=DB.getPhotos(del.id);
+      DB.savePhotos(del.id,[...existing,...pendPics]);
+    }
+    if(pendTollPics.length){
+      const existing=DB.getTollPhotos(del.id);
+      DB.saveTollPhotos(del.id,[...existing,...pendTollPics]);
+    }
+  }catch(err){
+    toast('⚠️ พื้นที่เก็บข้อมูลเต็ม — สำรองข้อมูลแล้วลบรูปเก่า','err');
+    return;
   }
   toast('✅ บันทึกสำเร็จ','ok');
   pendPics=[];pendTollPics=[];
@@ -617,22 +647,25 @@ function showModal(id){
       <button class="btn btn-d btn-sm" onclick="delD(${id})">🗑️ ลบ</button>
     </div>`:
     `<div class="mt">${fmtTH(d.date)}</div>
-    <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${d.zone||'-'}${d.province?' / '+d.province:''}</span></div>
+    <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${esc(d.zone)||'-'}${d.province?' / '+esc(d.province):''}</span></div>
     <div class="ir"><span class="lbl">จำนวนจุดส่ง</span><span class="val">${d.point_count||0} จุด</span></div>
     <div class="ir"><span class="lbl">ระยะกิโล</span><span class="val">${d.distance||0} กม.</span></div>
     <div class="ir"><span class="lbl">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
     <div class="ir"><span class="lbl">ชั้นที่ยกขึ้น/บ้าน</span><span class="val">${inc.fl.toLocaleString()} ฿<br><small style="color:var(--mu)">${flTxt}</small></span></div>
+    ${inc.up?`<div class="ir"><span class="lbl">🚚 ต่างจังหวัด</span><span class="val">${inc.up.toLocaleString()} ฿</span></div>`:''}
+    ${inc.pt?`<div class="ir"><span class="lbl">📍 จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${inc.pt.toLocaleString()} ฿</span></div>`:''}
     <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
     <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${inc.tot.toLocaleString()} ฿</span></div>
     ${inc.rent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${inc.rent.toLocaleString()} ฿</span></div>`:''}
     <div class="inet" style="margin:8px 0"><span>รายได้สุทธิ</span><span>${inc.net.toLocaleString()} ฿</span></div>
-    ${d.notes?`<p style="font-size:13px;color:var(--mu);margin-bottom:12px">📝 ${d.notes}</p>`:''}
+    ${d.notes?`<p style="font-size:13px;color:var(--mu);margin-bottom:12px">📝 ${esc(d.notes)}</p>`:''}
     ${photos.length?`<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--mu);margin-bottom:4px">รูปถ่ายงาน</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${photos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div></div>`:''}
     ${DB.getTollPhotos(id).length?`<div style="margin-bottom:12px"><div style="font-size:12px;color:#e67e22;font-weight:600;margin-bottom:4px">🧾 รูปบิลค่าทางด่วน</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${DB.getTollPhotos(id).map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden"><img src="${p}" style="width:100%;height:100%;object-fit:cover" onclick="window.open('${p}')"></div>`).join('')}</div></div>`:''}
     <div class="brow" style="flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="editD(${id})">✏️</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${d.date}')">📤 LINE</button>
-      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${d.date}')">📊 Excel</button>
+      <button class="btn btn-g btn-sm" onclick="emailDay('${d.date}')">📧 อีเมล์</button>
+      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${d.date}')">📊 CSV</button>
       <button class="btn btn-d btn-sm" onclick="delD(${id})">🗑️</button>
     </div>`;
   document.getElementById('modal').classList.add('active');
@@ -661,8 +694,8 @@ function initRep(){
   document.getElementById('rdate').value=todayStr();
   const end=new Date();end.setDate(end.getDate()-1);
   const start=new Date(end);start.setDate(start.getDate()-14);
-  document.getElementById('sstart').value=start.toISOString().split('T')[0];
-  document.getElementById('send').value=end.toISOString().split('T')[0];
+  document.getElementById('sstart').value=dStr(start);
+  document.getElementById('send').value=dStr(end);
 }
 function swTab(name,btn){
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
@@ -719,13 +752,13 @@ function exportExcel(mode){
   if(!dels.length){toast('ไม่มีข้อมูลในช่วงที่เลือก','err');return;}
   const driver=CFG.name||'';
   const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
-  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','เหมาจ่าย (บาท)','รายได้ยกชั้น (บาท)','รวมรายได้ (บาท)','หมายเหตุ','สถานะ'];
+  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','เหมาจ่าย (บาท)','รายได้ยกชั้น (บาท)','ต่างจังหวัด (บาท)','จุดที่ 7 ขึ้นไป (บาท)','รวมรายได้ (บาท)','หมายเหตุ','สถานะ'];
   const dataRows=dels.map(d=>{
     const dn=dayNames[new Date(d.date+'T00:00:00').getDay()];
-    if(d.is_holiday)return[d.date,dn,'','','','','','','','','','','หยุด'];
+    if(d.is_holiday)return[d.date,dn,'','','','','','','','','','','','','หยุด'];
     const inc=calcInc(d);
     const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
-    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,inc.km,inc.fl,inc.tot,d.notes||'','วิ่งงาน'];
+    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,inc.km,inc.fl,inc.up,inc.pt,inc.tot,d.notes||'','วิ่งงาน'];
   });
   const workDays=dels.filter(x=>!x.is_holiday);
   const totInc=workDays.reduce((s,x)=>s+calcInc(x).tot,0);
@@ -734,9 +767,11 @@ function exportExcel(mode){
   const totToll=workDays.reduce((s,x)=>s+(parseFloat(x.toll_fee)||0),0);
   const totKmInc=workDays.reduce((s,x)=>s+calcInc(x).km,0);
   const totFlInc=workDays.reduce((s,x)=>s+calcInc(x).fl,0);
+  const totUpInc=workDays.reduce((s,x)=>s+calcInc(x).up,0);
+  const totPtInc=workDays.reduce((s,x)=>s+calcInc(x).pt,0);
   const tax=parseFloat(CFG.tax||'1')/100;
   const taxAmt=totInc*tax;
-  const sumRow=['รวม','',`วิ่ง ${workDays.length} วัน`,`หยุด ${dels.length-workDays.length} วัน`,totPts,totKm,'',totToll,totKmInc,totFlInc,totInc,'',''];
+  const sumRow=['รวม','',`วิ่ง ${workDays.length} วัน`,`หยุด ${dels.length-workDays.length} วัน`,totPts,totKm,'',totToll,totKmInc,totFlInc,totUpInc,totPtInc,totInc,'',''];
   const infoRows=[['พนักงานขับรถ:',driver],['วันที่ออกรายงาน:',new Date().toLocaleDateString('th-TH')],['รวมรายได้:',totInc+' บาท'],['หัก ณ ที่จ่าย:',taxAmt.toFixed(2)+' บาท'],['รับสุทธิ:',(totInc-taxAmt).toFixed(2)+' บาท']];
   const csv=makeCSV([headers,...dataRows,sumRow,[],['== สรุป =='],...infoRows]);
   downloadCSV(csv,filename+'.csv');
@@ -758,32 +793,36 @@ function loadDR(){
     `<div class="card" style="margin-top:8px">
       <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:16px">
         <p style="font-weight:700;font-size:16px">📋 รายงานประจำวัน ${fmtTH(date)}</p>
-        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 ${driver}</p>`:''}
+        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 ${esc(driver)}</p>`:''}
       </div>
       <div style="text-align:center;padding:24px"><span style="font-size:48px">🏖️</span><p style="margin-top:8px;font-weight:600">วันหยุด</p></div>
       <div style="padding:0 16px 16px;display:flex;gap:8px">
         <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
-        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 Excel+รูปบิล</button>
+        <button class="btn btn-g btn-sm" onclick="emailDay('${date}')">📧 อีเมล์</button>
+        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 CSV+รูปบิล</button>
       </div>
     </div>`:
     `<div class="card" style="margin-top:8px">
       <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:16px">
         <p style="font-weight:700;font-size:16px">📦 รายงานประจำวัน ${fmtTH(date)}</p>
-        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 พนักงานขับรถ: ${driver}</p>`:''}
+        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 พนักงานขับรถ: ${esc(driver)}</p>`:''}
       </div>
-      <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${d.zone||'-'}${d.province?' / '+d.province:''}</span></div>
+      <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${esc(d.zone)||'-'}${d.province?' / '+esc(d.province):''}</span></div>
       <div class="ir"><span class="lbl">จำนวนจุดส่ง</span><span class="val">${d.point_count||0} จุด</span></div>
       <div class="ir"><span class="lbl">ระยะกิโล</span><span class="val">${d.distance||0} กม.</span></div>
       <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
       ${(d.floor_deliveries||[]).length?`<div class="ir"><span class="lbl">ชั้นที่ยกขึ้น/บ้าน</span><span class="val">${flTxt}</span></div>`:''}
-      ${d.notes?`<div class="ir"><span class="lbl">หมายเหตุ</span><span class="val">${d.notes}</span></div>`:''}
+      ${d.notes?`<div class="ir"><span class="lbl">หมายเหตุ</span><span class="val">${esc(d.notes)}</span></div>`:''}
       <div style="height:1px;background:var(--bdr);margin:4px 16px"></div>
       <div class="ir"><span class="lbl" style="color:var(--mu)">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
+      ${inc.up?`<div class="ir"><span class="lbl" style="color:var(--mu)">ต่างจังหวัด</span><span class="val">${inc.up.toLocaleString()} ฿</span></div>`:''}
+      ${inc.pt?`<div class="ir"><span class="lbl" style="color:var(--mu)">จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${inc.pt.toLocaleString()} ฿</span></div>`:''}
       ${inc.fl?`<div class="ir"><span class="lbl" style="color:var(--mu)">ยกชั้น</span><span class="val">${inc.fl.toLocaleString()} ฿</span></div>`:''}
       <div class="inet" style="margin:12px 16px 8px"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
       <div style="padding:0 16px 16px;display:flex;gap:8px">
         <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
-        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 Excel+รูปบิล</button>
+        <button class="btn btn-g btn-sm" onclick="emailDay('${date}')">📧 อีเมล์</button>
+        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 CSV+รูปบิล</button>
       </div>
     </div>`;
 }
@@ -794,15 +833,15 @@ function loadSum(){
   if(!start||!end)return;
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
-  let totKm=0,totFl=0,totTl=0,totRent=0,totD=0,totKmDist=0,totPts=0,holD=0;
+  let totKm=0,totFl=0,totTl=0,totRent=0,totD=0,totKmDist=0,totPts=0,holD=0,totUp=0,totPt=0;
   const rows=dels.map(d=>{
     if(d.is_holiday){holD++;return`<div class="ir"><span class="lbl">${fmtShort(d.date)}</span><span class="val mu">🏖️ หยุด</span></div>`;}
     const inc=calcInc(d);
-    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRent+=inc.rent;totD++;
+    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRent+=inc.rent;totUp+=inc.up;totPt+=inc.pt;totD++;
     totKmDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
-    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${d.zone||''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.</small></span><span class="val" style="color:var(--g)">${inc.net.toLocaleString()} ฿</span></div>`;
+    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${esc(d.zone)||''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.</small></span><span class="val" style="color:var(--g)">${inc.net.toLocaleString()} ฿</span></div>`;
   }).join('');
-  const totInc=totKm+totFl+totTl;
+  const totInc=totKm+totFl+totTl+totUp+totPt;
   const taxAmt=totInc*tax;
   const net=totInc-totRent-taxAmt;
   const area=document.getElementById('suma');
@@ -814,6 +853,8 @@ function loadSum(){
     </div>
     <div class="card">
       ${rows}
+      ${totUp?`<div class="ir"><span class="lbl">🚚 ต่างจังหวัด</span><span class="val">${totUp.toLocaleString()} ฿</span></div>`:''}
+      ${totPt?`<div class="ir"><span class="lbl">📍 จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${totPt.toLocaleString()} ฿</span></div>`:''}
       <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${totInc.toLocaleString()} ฿</span></div>
       ${totRent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${totRent.toLocaleString()} ฿</span></div>`:''}
       <div class="ir" style="color:var(--r)"><span class="lbl">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</span><span class="val">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
@@ -821,6 +862,7 @@ function loadSum(){
     </div>
     <div style="padding:0 16px 16px;display:flex;gap:8px">
       <button class="btn btn-g btn-sm" onclick="shareSum('${start}','${end}')">📤 แชร์ LINE</button>
+      <button class="btn btn-o btn-sm" onclick="emailSum('${start}','${end}')">📧 อีเมล์</button>
       <button class="btn btn-p btn-sm" onclick="pdfSum('${start}','${end}')">📄 ดาวน์โหลด PDF</button>
     </div>`;
 }
@@ -835,12 +877,12 @@ function shareDay(date){
   if(d.is_holiday){
     txt=`📋 รายงานประจำวัน\nพนักงาน: ${driver}\nวันที่: ${date}\n──────────────────\n🏖️ วันหยุด`;
   } else {
-    txt=`📦 รายงานประจำวัน Nitori Truck No.2
+    txt=`📦 รายงานประจำวัน ${CFG.truck||'Nitori Truck No.2'}
 พนักงานขับรถ: ${driver}
 วันที่: ${fmtTH(date)}
 ──────────────────
 🗺️ เขต/อำเภอ: ${d.zone||'-'}${d.province?' / '+d.province:''}
-📍 จำนวนจุดส่ง: ${d.point_count||0} จุด
+📍 จำนวนจุดส่ง: ${d.point_count||0} จุด${d.upcountry?'\n🚚 วิ่งต่างจังหวัด (+'+UP_FEE+' บาท)':''}
 🛣️ ระยะกิโล: ${d.distance||0} กม.
 🧾 รวมค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${(d.floor_deliveries||[]).length&&d.floor_deliveries.some(f=>f.floor>=3)?'\n🏢 ชั้นที่ยกขึ้น/บ้าน: '+(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(', '):''}${d.notes?'\n📝 หมายเหตุ: '+d.notes:''}`;
   }
@@ -852,19 +894,46 @@ async function emailDay(date){
   const dels=DB.getDeliveries();
   const d=dels.find(x=>x.date===date);
   if(!d)return;
-  const boss=CFG.boss||'';
+  const boss=(CFG.boss||'').trim();
   const driver=CFG.name||'';
-  let subject,bodyText;
+  if(!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
+  const [yy,mm,dd]=date.split('-');
+  const dTH=`${dd}/${mm}/${+yy+543}`;
+  const tollPics=DB.getTollPhotos(d.id);
+  const subject=`${driver} นำส่งแผนงานวันที่ ${dTH}`;
+  let bodyText;
   if(d.is_holiday){
-    subject=`รายงานประจำวัน ${date} - วันหยุด`;
-    bodyText=`เรียน หัวหน้า\n\nรายงานประจำวันที่ ${date}\nพนักงานขับรถ: ${driver}\n\nวันหยุด\n\nขอแสดงความนับถือ\n${driver}`;
+    bodyText=`เรียน หัวหน้า
+
+${driver} นำส่งแผนงานวันที่ ${dTH}
+
+วันนี้เป็นวันหยุด ไม่มีงานวิ่ง
+
+ขอแสดงความนับถือ
+${driver}`;
   } else {
     const inc=calcInc(d);
-    const flTxt=(d.floor_deliveries||[]).filter(f=>f.floor>=3).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง (${(f.floor-2)*100*(f.count||1)} บาท)`).join(', ')||'ไม่มี';
-    subject=`รายงานประจำวัน ${date} - ${driver}`;
-    bodyText=`เรียน หัวหน้า\n\nรายงานประจำวัน Nitori Truck No.2\nวันที่: ${fmtTH(date)}\nพนักงานขับรถ: ${driver}\n\nรายละเอียดงานที่จัดส่ง:\n──────────────────\nเขต/อำเภอที่วิ่งงาน: ${d.zone||'-'}\nจังหวัดที่วิ่งงาน: ${d.province||'-'}\nจำนวนจุดส่ง: ${d.point_count||0} จุด\nระยะกิโล: ${d.distance||0} กิโลเมตร\nชั้นที่ยกขึ้น/บ้าน: ${flTxt}\nรวมค่าทางด่วน: ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท${d.notes?'\nหมายเหตุ: '+d.notes:''}\n\nรายได้:\nเหมาจ่าย: ${inc.km.toLocaleString()} บาท\nยกชั้น: ${inc.fl.toLocaleString()} บาท\nรวม: ${inc.tot.toLocaleString()} บาท\n\nขอแสดงความนับถือ\n${driver}`;
+    const fls=(d.floor_deliveries||[]).filter(f=>f.floor>=3);
+    const flTxt=fls.length?'มี — '+fls.map(f=>`ชั้น ${f.floor} × ${f.count||1} ครั้ง (${(f.floor-2)*100*(f.count||1)} บาท)`).join(', '):'ไม่มี';
+    const tollAtt=tollPics.length?`บิลค่าทางด่วน ${tollPics.length} ไฟล์ (รวม ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท)`:`ไม่มีบิลค่าทางด่วนแนบ (ค่าทางด่วน ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท)`;
+    bodyText=`เรียน หัวหน้า
+
+${driver} นำส่งแผนงานวันที่ ${dTH}${CFG.truck?' ('+CFG.truck+')':''}
+
+รายละเอียดไฟล์แนบ:
+- ${tollAtt}
+
+รายละเอียดงาน:
+- เขตที่วิ่ง: ${d.zone||'-'}
+- จังหวัดที่วิ่ง: ${d.province||'-'}
+- จำนวนจุดที่วิ่ง: ${d.point_count||0} จุด
+- ระยะทาง: ${d.distance||0} กิโลเมตร
+- ขึ้นชั้น: ${flTxt}
+- วิ่งต่างจังหวัด: ${d.upcountry?'ใช่':'ไม่'}${d.notes?'\n- หมายเหตุ: '+d.notes:''}
+
+ขอแสดงความนับถือ
+${driver}`;
   }
-  const tollPics=DB.getTollPhotos(d.id);
   if(tollPics.length&&navigator.share){
     try{
       const files=tollPics.map((b64,i)=>new File([b64ToBlob(b64)],`บิลทางด่วน_${date}_${i+1}.jpg`,{type:'image/jpeg'}));
@@ -874,10 +943,27 @@ async function emailDay(date){
       }
     }catch(e){}
   }
-  window.location.href=`mailto:${encodeURIComponent(boss)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+  window.location.href=`mailto:${boss}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
   if(tollPics.length){
     setTimeout(()=>showTollDownloadModal(tollPics,date),800);
   }
+}
+
+function emailSum(start,end){
+  const boss=(CFG.boss||'').trim();
+  if(!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
+  const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
+  const tax=parseFloat(CFG.tax||'1')/100;
+  const driver=CFG.name||'';
+  let totInc=0,totRent=0;
+  const lines=dels.map(d=>{
+    if(d.is_holiday)return`${d.date}: หยุด`;
+    const inc=calcInc(d);totInc+=inc.tot;totRent+=inc.rent;
+    return`${d.date}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0} จุด ${d.distance||0} กม.${inc.up?' (ต่างจังหวัด)':''} = ${inc.tot.toLocaleString()} บาท`;
+  }).join('\n');
+  const taxAmt=totInc*tax;
+  const body=`เรียน หัวหน้า\n\nสรุปรายได้ประจำงวด ${start} ถึง ${end}\nพนักงานขับรถ: ${driver}\n──────────────────\n${lines}\n──────────────────\nรวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\n\nขอแสดงความนับถือ\n${driver}`;
+  window.location.href=`mailto:${boss}?subject=${encodeURIComponent('สรุปรายได้ '+start+' ถึง '+end+' - '+driver)}&body=${encodeURIComponent(body)}`;
 }
 
 function b64ToBlob(base64){
@@ -944,7 +1030,7 @@ async function shareExcelWithPhotos(xlsxBlob,filename,date,tollPics){
   const url=URL.createObjectURL(xlsxBlob);
   const a=document.createElement('a');a.href=url;a.download=filename;a.click();
   URL.revokeObjectURL(url);
-  toast('📥 ดาวน์โหลด Excel สำเร็จ','ok');
+  toast('📥 ดาวน์โหลด CSV สำเร็จ','ok');
   if(tollPics.length)setTimeout(()=>showTollDownloadModal(tollPics,date),600);
 }
 
@@ -958,7 +1044,7 @@ function shareSum(start,end){
     return`${d.date}: ${d.zone||'-'} ${d.point_count||0}จุด ${d.distance||0}กม. = ${inc.tot.toLocaleString()}฿`;
   }).join('\n');
   const taxAmt=totInc*tax;
-  const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\nรวม: ${totInc.toLocaleString()} บาท\nหัก 1%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
+  const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\nรวม: ${totInc.toLocaleString()} บาท\nหัก ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
   copyAndShare(txt);
 }
 
@@ -1013,21 +1099,21 @@ function captureSig(){
 function buildPDF(start,end,sigData){
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
-  const driver=CFG.name||'................................';
-  let totKm=0,totFl=0,totTl=0,totRentPDF=0,totD=0,totDist=0,totPts=0,holD=0;
+  const driver=esc(CFG.name)||'................................';
+  let totKm=0,totFl=0,totTl=0,totRentPDF=0,totD=0,totDist=0,totPts=0,holD=0,totUp=0,totPt=0;
 
   const rows=dels.map((d,i)=>{
     if(d.is_holiday){holD++;
       return`<tr style="background:#f5f5f5"><td>${i+1}</td><td>${d.date}</td><td colspan="5" style="text-align:center;color:#999">วันหยุด</td><td>-</td></tr>`;
     }
     const inc=calcInc(d);
-    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRentPDF+=inc.rent;totD++;
+    totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRentPDF+=inc.rent;totUp+=inc.up;totPt+=inc.pt;totD++;
     totDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
     const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(',')||'-';
     return`<tr>
       <td>${i+1}</td>
       <td>${d.date}</td>
-      <td>${d.zone||'-'}${d.province?'<br><small>'+d.province+'</small>':''}</td>
+      <td>${esc(d.zone)||'-'}${d.province?'<br><small>'+esc(d.province)+'</small>':''}</td>
       <td style="text-align:center">${d.point_count||0}</td>
       <td style="text-align:center">${d.distance||0}</td>
       <td style="text-align:center">${flTxt}</td>
@@ -1036,7 +1122,7 @@ function buildPDF(start,end,sigData){
     </tr>`;
   }).join('');
 
-  const totInc=totKm+totFl+totTl;
+  const totInc=totKm+totFl+totTl+totUp+totPt;
   const taxAmt=totInc*tax;
   const net=totInc-totRentPDF-taxAmt;
   const printDate=new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'});
@@ -1108,6 +1194,8 @@ function buildPDF(start,end,sigData){
   <table class="income-table">
     <tr><td class="label">เหมาจ่ายระยะทาง</td><td style="text-align:right">${totKm.toLocaleString()} ฿</td></tr>
     <tr><td class="label">ยกของขึ้นชั้น</td><td style="text-align:right">${totFl.toLocaleString()} ฿</td></tr>
+    ${totUp?`<tr><td class="label">ต่างจังหวัด</td><td style="text-align:right">${totUp.toLocaleString()} ฿</td></tr>`:''}
+    ${totPt?`<tr><td class="label">จุดที่ ${PT7_MIN} ขึ้นไป</td><td style="text-align:right">${totPt.toLocaleString()} ฿</td></tr>`:''}
     <tr><td class="label">ค่าทางด่วนรวม</td><td style="text-align:right">${totTl.toLocaleString()} ฿</td></tr>
     <tr class="total"><td>รวมรายได้</td><td style="text-align:right">${totInc.toLocaleString()} ฿</td></tr>
     ${totRentPDF?`<tr><td class="label" style="color:#c0392b">🚗 หัก ค่าเช่ารถ</td><td style="text-align:right;color:#c0392b">- ${totRentPDF.toLocaleString()} ฿</td></tr>`:''}
@@ -1120,7 +1208,7 @@ function buildPDF(start,end,sigData){
   <div class="sign-box">
     ${sigData?`<img src="${sigData}" style="max-height:60px;max-width:220px;display:block;margin:0 auto">`:` <div class="sign-line"></div>`}
     <div class="sign-label">ลายเซ็นพนักงานขับรถ</div>
-    <div class="sign-name">(${CFG.name||'................................................'})</div>
+    <div class="sign-name">(${esc(CFG.name)||'................................................'})</div>
     <div class="sign-name" style="margin-top:4px">วันที่ ${new Date().toLocaleDateString('th-TH')}</div>
   </div>
   <div class="sign-box">
@@ -1152,10 +1240,11 @@ function loadCfg(){
   CFG=DB.getSettings();
   document.getElementById('sname').value=CFG.name||'';
   document.getElementById('sboss').value=CFG.boss||'';
+  document.getElementById('struck').value=CFG.truck||'';
   document.getElementById('srent').value=CFG.rent||'';
   document.getElementById('sfuel').value=CFG.fuel||'r5';
   document.getElementById('stax').value=CFG.tax||'1';
-  updFuelPrev();
+  updFuelPrev();showStorage();
 }
 function updFuelPrev(){
   const col=document.getElementById('sfuel').value;
@@ -1166,12 +1255,62 @@ function saveSettings(){
   CFG={
     name:document.getElementById('sname').value,
     boss:document.getElementById('sboss').value,
+    truck:document.getElementById('struck').value,
     rent:document.getElementById('srent').value,
     fuel:document.getElementById('sfuel').value,
     tax:document.getElementById('stax').value
   };
   DB.saveSettings(CFG);
   toast('✅ บันทึกการตั้งค่าแล้ว','ok');
+}
+
+/* ── Backup / Restore / Storage ── */
+function showStorage(){
+  try{
+    let n=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('nitori_'))n+=(k.length+localStorage.getItem(k).length)*2;}
+    document.getElementById('stinfo').textContent=`พื้นที่ที่ใช้: ${(n/1048576).toFixed(1)} MB (เบราว์เซอร์จำกัดประมาณ 5 MB)`;
+  }catch(e){}
+}
+function backupAll(){
+  const o={};
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('nitori_'))o[k]=localStorage.getItem(k);}
+  const blob=new Blob([JSON.stringify(o)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`nitori_backup_${todayStr()}.json`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast('⬇️ สำรองข้อมูลแล้ว','ok');
+}
+function restoreAll(inp){
+  const f=inp.files[0];inp.value='';if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const o=JSON.parse(e.target.result);
+      const keys=Object.keys(o).filter(k=>k.startsWith('nitori_'));
+      if(!keys.length)throw new Error('empty');
+      if(!confirm(`กู้คืนข้อมูล ${keys.length} รายการ? ข้อมูลปัจจุบันจะถูกแทนที่`))return;
+      Object.keys(localStorage).filter(k=>k.startsWith('nitori_')).forEach(k=>localStorage.removeItem(k));
+      keys.forEach(k=>localStorage.setItem(k,o[k]));
+      CFG=DB.getSettings();loadCfg();toast('✅ กู้คืนข้อมูลสำเร็จ','ok');
+    }catch(err){toast('ไฟล์สำรองไม่ถูกต้อง หรือพื้นที่ไม่พอ','err');}
+  };
+  r.readAsText(f);
+}
+/* ย่อรูปก่อนเก็บ ลดการใช้พื้นที่ localStorage */
+function shrinkImg(file,cb){
+  const r=new FileReader();
+  r.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const M=1000,sc=Math.min(1,M/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      cb(cv.toDataURL('image/jpeg',0.7));
+    };
+    img.onerror=()=>cb(e.target.result);
+    img.src=e.target.result;
+  };
+  r.readAsDataURL(file);
 }
 
 /* ── Init ── */
