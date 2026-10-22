@@ -363,6 +363,14 @@ function getRate(dist){
   const row = NT.find(r=>dist>=r.mn&&dist<=r.mx);
   return row?row[col]:0;
 }
+/* ป้ายบอกโบนัสของวันนั้น (ใช้ในสรุปงวด) */
+function bonusTags(inc,html){
+  const t=[];
+  if(inc.up)t.push('🚚 ต่างจังหวัด +'+inc.up);
+  if(inc.pt)t.push('📍 จุด '+PT7_MIN+'+ +'+inc.pt);
+  if(inc.fl)t.push('🏢 ยกชั้น +'+inc.fl);
+  return html?t.map(x=>`<span style="display:inline-block;font-size:11px;background:#eef;border-radius:4px;padding:1px 5px;margin:2px 3px 0 0;color:#335">${x}</span>`).join(''):t.join(' · ');
+}
 function floorInc(fds){
   return (fds||[]).reduce((s,f)=>{const fl=parseInt(f.floor)||0;const c=parseInt(f.count)||1;return fl>=3?s+(fl-2)*100*c:s},0);
 }
@@ -692,7 +700,7 @@ function delD(id){
 /* ── Reports ── */
 function initRep(){
   document.getElementById('rdate').value=todayStr();
-  const end=new Date();end.setDate(end.getDate()-1);
+  const end=new Date();
   const start=new Date(end);start.setDate(start.getDate()-14);
   document.getElementById('sstart').value=dStr(start);
   document.getElementById('send').value=dStr(end);
@@ -839,7 +847,7 @@ function loadSum(){
     const inc=calcInc(d);
     totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRent+=inc.rent;totUp+=inc.up;totPt+=inc.pt;totD++;
     totKmDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
-    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${esc(d.zone)||''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.</small></span><span class="val" style="color:var(--g)">${inc.net.toLocaleString()} ฿</span></div>`;
+    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${esc(d.zone)||''}${d.province?' / '+esc(d.province):''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.${inc.tl?' · ทางด่วน '+inc.tl.toLocaleString():''}</small><br>${bonusTags(inc,true)}</span><span class="val" style="color:var(--g)">${inc.tot.toLocaleString()} ฿</span></div>`;
   }).join('');
   const totInc=totKm+totFl+totTl+totUp+totPt;
   const taxAmt=totInc*tax;
@@ -853,6 +861,10 @@ function loadSum(){
     </div>
     <div class="card">
       ${rows}
+      <div style="height:1px;background:var(--bdr);margin:4px 16px"></div>
+      <div class="ir"><span class="lbl">เหมาจ่ายระยะทาง</span><span class="val">${totKm.toLocaleString()} ฿</span></div>
+      ${totFl?`<div class="ir"><span class="lbl">🏢 ยกของขึ้นชั้น</span><span class="val">${totFl.toLocaleString()} ฿</span></div>`:''}
+      ${totTl?`<div class="ir"><span class="lbl">🧾 ค่าทางด่วน</span><span class="val">${totTl.toLocaleString()} ฿</span></div>`:''}
       ${totUp?`<div class="ir"><span class="lbl">🚚 ต่างจังหวัด</span><span class="val">${totUp.toLocaleString()} ฿</span></div>`:''}
       ${totPt?`<div class="ir"><span class="lbl">📍 จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${totPt.toLocaleString()} ฿</span></div>`:''}
       <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${totInc.toLocaleString()} ฿</span></div>
@@ -949,6 +961,7 @@ ${driver}`;
   }
 }
 
+function thDate(ds){const [y,m,d]=ds.split('-');return`${d}/${m}/${+y+543}`}
 function emailSum(start,end){
   const boss=(CFG.boss||'').trim();
   if(!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
@@ -959,11 +972,12 @@ function emailSum(start,end){
   const lines=dels.map(d=>{
     if(d.is_holiday)return`${d.date}: หยุด`;
     const inc=calcInc(d);totInc+=inc.tot;totRent+=inc.rent;
-    return`${d.date}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0} จุด ${d.distance||0} กม.${inc.up?' (ต่างจังหวัด)':''} = ${inc.tot.toLocaleString()} บาท`;
+    const bt=bonusTags(inc,false);
+    return`${d.date}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0} จุด ${d.distance||0} กม.${bt?' ['+bt+']':''} = ${inc.tot.toLocaleString()} บาท`;
   }).join('\n');
   const taxAmt=totInc*tax;
   const body=`เรียน หัวหน้า\n\nสรุปรายได้ประจำงวด ${start} ถึง ${end}\nพนักงานขับรถ: ${driver}\n──────────────────\n${lines}\n──────────────────\nรวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\n\nขอแสดงความนับถือ\n${driver}`;
-  window.location.href=`mailto:${boss}?subject=${encodeURIComponent('สรุปรายได้ '+start+' ถึง '+end+' - '+driver)}&body=${encodeURIComponent(body)}`;
+  window.location.href=`mailto:${boss}?subject=${encodeURIComponent(driver+' นำส่งสรุปงานวันที่ '+thDate(start)+' - '+thDate(end))}&body=${encodeURIComponent(body)}`;
 }
 
 function b64ToBlob(base64){
@@ -1037,14 +1051,15 @@ async function shareExcelWithPhotos(xlsxBlob,filename,date,tollPics){
 function shareSum(start,end){
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
-  let totInc=0;
+  let totInc=0,totRent=0;
   const lines=dels.map(d=>{
     if(d.is_holiday)return`${d.date}: 🏖️ หยุด`;
-    const inc=calcInc(d);totInc+=inc.tot;
-    return`${d.date}: ${d.zone||'-'} ${d.point_count||0}จุด ${d.distance||0}กม. = ${inc.tot.toLocaleString()}฿`;
+    const inc=calcInc(d);totInc+=inc.tot;totRent+=inc.rent;
+    const bt=bonusTags(inc,false);
+    return`${d.date}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0}จุด ${d.distance||0}กม.${bt?' ['+bt+']':''} = ${inc.tot.toLocaleString()}฿`;
   }).join('\n');
   const taxAmt=totInc*tax;
-  const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\nรวม: ${totInc.toLocaleString()} บาท\nหัก ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
+  const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\nรวม: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
   copyAndShare(txt);
 }
 
@@ -1113,7 +1128,7 @@ function buildPDF(start,end,sigData){
     return`<tr>
       <td>${i+1}</td>
       <td>${d.date}</td>
-      <td>${esc(d.zone)||'-'}${d.province?'<br><small>'+esc(d.province)+'</small>':''}</td>
+      <td>${esc(d.zone)||'-'}${d.province?'<br><small>'+esc(d.province)+'</small>':''}${(inc.up||inc.pt)?'<br><small style="color:#335">'+bonusTags({up:inc.up,pt:inc.pt,fl:0},false)+'</small>':''}${inc.rent?'<br><small style="color:#c0392b">หักเช่า '+inc.rent.toLocaleString()+'</small>':''}</td>
       <td style="text-align:center">${d.point_count||0}</td>
       <td style="text-align:center">${d.distance||0}</td>
       <td style="text-align:center">${flTxt}</td>
