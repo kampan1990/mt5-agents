@@ -72,6 +72,18 @@ python main.py run --confirm-live
 
 ผล backtest จะออกเป็น JSON (return, max DD, win rate, profit factor, avg R, Sharpe) และรายการเทรดอยู่ใน `logs/backtest_*.csv`
 
+## ต้องใช้ API key อะไรบ้าง
+
+| คำสั่ง | Anthropic key | Binance key |
+|--------|:---:|:---:|
+| `fetch`, `listing-study`, `dashboard` | ไม่ต้อง | ไม่ต้อง (ใช้ข้อมูลสาธารณะ) |
+| `backtest --engine rules` | ไม่ต้อง | ไม่ต้อง |
+| `backtest --engine claude` | **ต้อง** (เสียค่า API) | ไม่ต้อง |
+| `run` (testnet / dry-run / live) | ต้อง ถ้าใช้ `--engine claude` | **ต้อง** แม้เป็น testnet หรือ `--dry-run` |
+
+ไม่มีคีย์ให้ทดลองได้ด้วย `fetch` แล้ว `backtest --engine rules` ถ้าขาดคีย์ บอทจะหยุดพร้อมบอกว่าขาดอะไร (ไม่แสดง traceback)
+คีย์ Binance ควรสร้างจาก testnet/demo และปิดสิทธิ์ถอนเงิน (Enable Withdrawals) เสมอ
+
 ## แดชบอร์ด
 
 ```bash

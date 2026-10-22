@@ -276,3 +276,41 @@ def test_api_error_raised_with_code():
     with pytest.raises(BinanceAPIError) as e:
         ex.market_order("BTCUSDT", "BUY", SymbolRules(RULES).round_qty(0.01))
     assert e.value.code == -4120
+
+
+# ---- credential preflight ------------------------------------------------------------
+def test_claude_engine_missing_key_raises_clear_config_error(tmp_path):
+    import anthropic
+    from bot.engines import ConfigError
+
+    err = TypeError('"Could not resolve authentication method. Expected one of api_key, auth_token, ..."')
+
+    class NoKeyClient:
+        class models:
+            @staticmethod
+            def retrieve(model): raise err
+
+        messages = FakeMessages(exc=err)
+        beta = SimpleNamespace(messages=messages)
+
+    eng = ClaudeEngine(LLMConfig(cache_dir=str(tmp_path)), client=NoKeyClient())
+    with pytest.raises(ConfigError, match="ANTHROPIC_API_KEY"):
+        eng.check_credentials()
+    with pytest.raises(ConfigError, match="ANTHROPIC_API_KEY"):          # mid-run, e.g. backtest
+        eng.decide(build_snapshot(make_df(), "X", "1h"))
+
+
+def test_claude_preflight_rejects_bad_key_and_tolerates_offline(tmp_path):
+    import anthropic
+    from bot.engines import ConfigError
+
+    req = httpx.Request("GET", "https://api.anthropic.com/v1/models/x")
+
+    def client_raising(exc):
+        return SimpleNamespace(models=SimpleNamespace(retrieve=lambda m: (_ for _ in ()).throw(exc)))
+
+    bad = anthropic.AuthenticationError("bad key", response=httpx.Response(401, request=req), body=None)
+    with pytest.raises(ConfigError, match="ปฏิเสธ"):
+        ClaudeEngine(LLMConfig(cache_dir=str(tmp_path / "a")), client=client_raising(bad)).check_credentials()
+    offline = anthropic.APIConnectionError(request=req)
+    ClaudeEngine(LLMConfig(cache_dir=str(tmp_path / "b")), client=client_raising(offline)).check_credentials()  # no raise

@@ -21,7 +21,7 @@ import pandas as pd
 from bot.backtest import Backtester
 from bot.binance_client import BinanceFutures, fetch_history
 from bot.config import load_config
-from bot.engines import ClaudeEngine, RuleEngine
+from bot.engines import ClaudeEngine, ConfigError, RuleEngine
 from bot.journal import Journal, setup_logging
 from bot.market_data import klines_to_df
 from bot.trader import Trader
@@ -67,7 +67,10 @@ def cmd_backtest(args, cfg) -> None:
         df = pd.read_csv(args.csv, index_col=0, parse_dates=True) if args.csv else load_history(sym, interval, args.days)
         bt = Backtester(engine, cfg.risk, interval=interval, initial_equity=args.equity,
                         decision_every=args.decision_every, anonymize=cfg.llm.anonymize)
-        res = bt.run(df, sym)
+        try:
+            res = bt.run(df, sym)
+        except ConfigError as e:
+            raise SystemExit(f"error: {e}")
         m = res.metrics(interval)
         m["rejections"] = res.rejections
         results.append(m)
@@ -116,6 +119,15 @@ def cmd_run(args, cfg) -> None:
     if args.dry_run:
         cfg.dry_run = True
     engine = make_engine(args.engine, cfg)
+    try:
+        if isinstance(engine, ClaudeEngine):
+            engine.check_credentials()
+    except ConfigError as e:
+        raise SystemExit(f"error: {e}")
+    if not (cfg.binance.api_key and cfg.binance.api_secret):
+        raise SystemExit("error: ไม่พบ BINANCE_API_KEY / BINANCE_API_SECRET ใน .env (โหมด run ต้องใช้คีย์แม้เป็น "
+                         "testnet หรือ --dry-run เพราะต้องอ่านยอดเงินและ position) ถ้ายังไม่มีคีย์ ให้ใช้ backtest / "
+                         "listing-study / dashboard ซึ่งไม่ต้องใช้คีย์")
     trader = Trader(cfg, engine, BinanceFutures(cfg.binance), Journal(cfg.log_dir))
     if args.once:
         trader.prepare()

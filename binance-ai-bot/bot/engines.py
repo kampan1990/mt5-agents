@@ -17,6 +17,14 @@ from .models import Action, Decision, MarketSnapshot
 log = logging.getLogger(__name__)
 
 
+class ConfigError(RuntimeError):
+    """Missing/invalid credentials or model id. Message is meant to be shown to the user as is."""
+
+
+NO_ANTHROPIC_KEY = ("ไม่พบ Anthropic API key: ตั้ง ANTHROPIC_API_KEY ใน .env (หรือรัน `ant auth login`) "
+                    "หรือใช้ --engine rules ซึ่งไม่ต้องใช้คีย์")
+
+
 class DecisionEngine(Protocol):
     name: str
 
@@ -105,6 +113,21 @@ class ClaudeEngine:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
 
+    def check_credentials(self) -> None:
+        """Fail fast at startup with a clear message (free call: reads model metadata, spends no tokens)."""
+        import anthropic
+
+        try:
+            self.client.models.retrieve(self.cfg.model)
+        except TypeError as e:                       # SDK found no api_key / auth_token / profile
+            raise ConfigError(NO_ANTHROPIC_KEY) from e
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+            raise ConfigError("Anthropic ปฏิเสธ API key นี้ (ผิด หมดอายุ หรือไม่มีสิทธิ์) ตรวจ ANTHROPIC_API_KEY อีกครั้ง") from e
+        except anthropic.NotFoundError as e:
+            raise ConfigError(f"ไม่พบโมเดล {self.cfg.model!r} ตรวจ LLM_MODEL") from e
+        except anthropic.APIConnectionError:
+            log.warning("เชื่อมต่อ Anthropic ไม่ได้ จึงตรวจคีย์ไม่ได้ในตอนนี้")
+
     def _cache_key(self, payload: str) -> str:
         h = hashlib.sha256()
         for part in (self.cfg.model, self.cfg.effort, SYSTEM_PROMPT, payload):
@@ -150,6 +173,10 @@ class ClaudeEngine:
                 )
             else:
                 resp = self.client.messages.parse(**kwargs)
+        except TypeError as e:
+            if "authentication" in str(e).lower():
+                raise ConfigError(NO_ANTHROPIC_KEY) from e
+            raise
         except anthropic.RateLimitError as e:
             log.warning("Claude rate limited: %s", e)
             return None
