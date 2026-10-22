@@ -302,6 +302,8 @@ input:checked+.tgt:before{transform:translateX(20px)}
 <div id="toast"></div>
 <div class="ov" id="modal"><div class="mo"><div class="mh"></div><div id="mc"></div></div></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 /* ── Data Layer (localStorage) ── */
 const DB = {
@@ -1077,8 +1079,9 @@ function showSigModal(start,end){
     <canvas id="sig-cv" style="border:2px solid var(--bdr);border-radius:10px;width:100%;background:#fff;cursor:crosshair;touch-action:none" height="140"></canvas>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="clearSig()">🗑️ ล้างลายเซ็น</button>
-      <button class="btn btn-w btn-sm" onclick="buildPDF('${start}','${end}',null);closeModal()">ข้าม</button>
-      <button class="btn btn-p" style="flex:1" onclick="buildPDF('${start}','${end}',captureSig());closeModal()">📄 สร้าง PDF พร้อมลายเซ็น</button>
+      <button class="btn btn-w btn-sm" onclick="savePDF('${start}','${end}',null);closeModal()">ข้าม</button>
+      <button class="btn btn-p" style="flex:1" onclick="savePDF('${start}','${end}',captureSig());closeModal()">📄 สร้าง PDF (A4 หน้าเดียว)</button>
+      <button class="btn btn-o btn-sm" onclick="buildPDF('${start}','${end}',captureSig());closeModal()">🖨️ พิมพ์แทน</button>
     </div>
   `;
   document.getElementById('modal').classList.add('active');
@@ -1111,7 +1114,7 @@ function captureSig(){
   return hasInk?sigPad.canvas.toDataURL('image/png'):null;
 }
 
-function buildPDF(start,end,sigData){
+function pdfHTML(start,end,sigData,forCanvas){
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
   const driver=esc(CFG.name)||'................................';
@@ -1170,10 +1173,10 @@ function buildPDF(start,end,sigData){
   .sign-name{font-size:13px;margin-top:4px;color:#555}
   @media print{.no-print{display:none}}
 </style></head><body>
-<div class="no-print" style="padding:12px;text-align:center">
+@@PO@@<div class="no-print" style="padding:12px;text-align:center">
   <button onclick="window.print()" style="padding:10px 24px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-family:inherit">🖨️ พิมพ์ / บันทึก PDF</button>
   <p style="font-size:12px;color:#888;margin-top:8px">บน iPhone: กด "Share" → "Print" → pinch out to save PDF<br>Android: เลือก "Save as PDF" ใน printer</p>
-</div>
+</div>@@/PO@@
 
 <div id="fitbox"><div id="pg">
 <h2>📋 สรุปรายได้ประจำงวด</h2>
@@ -1238,7 +1241,7 @@ function buildPDF(start,end,sigData){
   </div>
 </div>
 </div></div>
-<script>
+@@PO@@<script>
 (function(){
   var W=Math.round(190/25.4*96), H=Math.floor(277/25.4*96)-6;
   function fit(){
@@ -1258,11 +1261,49 @@ function buildPDF(start,end,sigData){
   window.addEventListener('load',fit);
   window.addEventListener('beforeprint',fit);
 })();
-<\/script>
+<\/script>@@/PO@@
 </body></html>`;
 
+  return forCanvas?html.replace(/@@PO@@[\s\S]*?@@\/PO@@/g,''):html.replace(/@@\/?PO@@/g,'');
+}
+function buildPDF(start,end,sigData){
   const w=window.open('','_blank','width=800,height=900');
-  w.document.write(html);w.document.close();
+  if(!w){toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์','err');return;}
+  w.document.write(pdfHTML(start,end,sigData,false));w.document.close();
+}
+/* สร้างไฟล์ PDF A4 หน้าเดียวโดยตรง (ไม่พึ่งหน้าต่างพิมพ์ของเครื่อง) */
+async function savePDF(start,end,sigData){
+  if(!window.html2canvas||!window.jspdf){toast('โหลดตัวสร้าง PDF ไม่ได้ (ต้องต่ออินเทอร์เน็ต) — ใช้ปุ่มพิมพ์แทน','err');return;}
+  toast('⏳ กำลังสร้าง PDF...');
+  const fr=document.createElement('iframe');
+  fr.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1200px;border:0;background:#fff';
+  document.body.appendChild(fr);
+  try{
+    await new Promise(res=>{fr.onload=res;fr.srcdoc=pdfHTML(start,end,sigData,true);});
+    const doc=fr.contentDocument;
+    try{await doc.fonts.ready;}catch(e){}
+    const pg=doc.getElementById('pg');
+    pg.style.width='718px';pg.style.padding='0';
+    doc.body.style.width='718px';
+    fr.style.height=(pg.offsetHeight+40)+'px';
+    const cv=await html2canvas(pg,{scale:2,backgroundColor:'#ffffff',windowWidth:794});
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    let w=190,h=cv.height/cv.width*190;
+    if(h>277){h=277;w=h*cv.width/cv.height;}
+    pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',(210-w)/2,10,w,h);
+    const name=`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`;
+    const blob=pdf.output('blob');
+    const file=new File([blob],name,{type:'application/pdf'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      try{await navigator.share({files:[file],title:name});toast('✅ สร้าง PDF แล้ว','ok');return;}catch(e){if(e&&e.name==='AbortError')return;}
+    }
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    toast('✅ ดาวน์โหลด PDF แล้ว','ok');
+  }catch(err){
+    toast('สร้าง PDF ไม่สำเร็จ — ใช้ปุ่มพิมพ์แทน','err');
+  }finally{fr.remove();}
 }
 
 function copyAndShare(txt){
