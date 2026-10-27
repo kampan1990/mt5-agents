@@ -1,0 +1,63 @@
+; ThreeMagicEA preset - EURUSD - low/medium volatility (5-digit, 1 pip = 10 points)
+; TF enum: PERIOD_M15 = 16385
+; Close to the EA defaults; a reasonable starting point for major FX pairs.
+;
+; ---- GLOBAL / RISK ----
+InpSlippagePoints=20
+InpMaxAccountDDPct=20.0
+InpCloseAllOnHalt=true
+InpLogToFile=false
+InpLogLevel=1
+;
+; ---- MAGIC 1: ENGULFING ----
+InpM1_Enable=true
+InpM1_TF=16385
+InpM1_RetracePercent=30.0
+InpM1_GridStepPoints=150
+InpM1_OrdersPerSide=5
+InpM1_Lots=0.01
+InpM1_BasketTP=50.0
+InpM1_BasketSL=300.0
+InpM1_FlipMaxLoss=30.0
+InpM1_RecoveryTrigger=40.0
+InpM1_RecoveryStep=40.0
+InpM1_RecoveryMaxAdds=5
+InpM1_RecoveryLotMult=1.5
+;
+; ---- MAGIC 2: SIDEWAY ----
+InpM2_Enable=true
+InpM2_TF=16385
+InpM2_BBPeriod=20
+InpM2_BBDeviation=2.0
+InpM2_RSIPeriod=14
+InpM2_RSIOverbought=70.0
+InpM2_RSIOversold=30.0
+InpM2_ADXPeriod=14
+InpM2_ADXSidewayMax=22.0
+InpM2_ADXBreakout=30.0
+InpM2_BBWidthMaxPct=1.5
+InpM2_GridOrders=5
+InpM2_GridStepPoints=120
+InpM2_BreakoutBufferPts=100
+InpM2_CooldownBars=5
+InpM2_Lots=0.01
+InpM2_BasketTP=40.0
+InpM2_BasketSL=250.0
+;
+; ---- MAGIC 3: TREND ----
+InpM3_Enable=true
+InpM3_TF=16385
+InpM3_EMAFast=20
+InpM3_EMASlow=50
+InpM3_ADXPeriod=14
+InpM3_ADXTrendMin=25.0
+InpM3_ATRPeriod=14
+InpM3_OrdersPerSide=5
+InpM3_GridStepPoints=150
+InpM3_Lots=0.01
+InpM3_SLAtrMult=1.5
+InpM3_RunnerTP=1500
+InpM3_KeepRunnerCount=2
+InpM3_PartialTrigPts=300
+InpM3_TrailAtrMult=2.0
+InpM3_MaxPositions=8

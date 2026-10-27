@@ -1,0 +1,64 @@
+; ThreeMagicEA preset - XAUUSD (Gold) - high volatility
+; Assumes 2-digit gold quote (1 point = 0.01). Adjust GridStep/TP if broker uses 3-digit.
+; TF enum: PERIOD_M15 = 16385
+; Starting point only - re-optimise per broker spread & tick value.
+;
+; ---- GLOBAL / RISK ----
+InpSlippagePoints=40
+InpMaxAccountDDPct=20.0
+InpCloseAllOnHalt=true
+InpLogToFile=false
+InpLogLevel=1
+;
+; ---- MAGIC 1: ENGULFING ----
+InpM1_Enable=true
+InpM1_TF=16385
+InpM1_RetracePercent=30.0
+InpM1_GridStepPoints=300
+InpM1_OrdersPerSide=5
+InpM1_Lots=0.01
+InpM1_BasketTP=60.0
+InpM1_BasketSL=400.0
+InpM1_FlipMaxLoss=40.0
+InpM1_RecoveryTrigger=60.0
+InpM1_RecoveryStep=60.0
+InpM1_RecoveryMaxAdds=5
+InpM1_RecoveryLotMult=1.5
+;
+; ---- MAGIC 2: SIDEWAY ----
+InpM2_Enable=true
+InpM2_TF=16385
+InpM2_BBPeriod=20
+InpM2_BBDeviation=2.0
+InpM2_RSIPeriod=14
+InpM2_RSIOverbought=70.0
+InpM2_RSIOversold=30.0
+InpM2_ADXPeriod=14
+InpM2_ADXSidewayMax=22.0
+InpM2_ADXBreakout=30.0
+InpM2_BBWidthMaxPct=1.0
+InpM2_GridOrders=5
+InpM2_GridStepPoints=250
+InpM2_BreakoutBufferPts=250
+InpM2_CooldownBars=6
+InpM2_Lots=0.01
+InpM2_BasketTP=50.0
+InpM2_BasketSL=300.0
+;
+; ---- MAGIC 3: TREND ----
+InpM3_Enable=true
+InpM3_TF=16385
+InpM3_EMAFast=20
+InpM3_EMASlow=50
+InpM3_ADXPeriod=14
+InpM3_ADXTrendMin=25.0
+InpM3_ATRPeriod=14
+InpM3_OrdersPerSide=5
+InpM3_GridStepPoints=300
+InpM3_Lots=0.01
+InpM3_SLAtrMult=1.5
+InpM3_RunnerTP=3000
+InpM3_KeepRunnerCount=2
+InpM3_PartialTrigPts=500
+InpM3_TrailAtrMult=2.0
+InpM3_MaxPositions=8
