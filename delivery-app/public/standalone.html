@@ -276,6 +276,15 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <div class="fs"><div class="fg"><label>หัก ณ ที่จ่าย (%)</label><input type="number" id="stax" value="1" min="0" max="100" step="0.5"></div></div>
   </div>
   <div class="card">
+    <div class="ct">📧 ส่งอีเมล์ให้หัวหน้าอัตโนมัติ (กดครั้งเดียว)</div>
+    <div class="fs">
+      <p class="mu" style="font-size:12px;margin-bottom:10px">ตั้งค่าครั้งเดียว: สร้าง Google Apps Script จากไฟล์ mail-script.gs แล้ววางลิงก์ Web App กับรหัสลับที่นี่ หลังจากนั้นปุ่ม "สร้าง PDF + ส่งหัวหน้า" จะส่งอีเมล์พร้อมไฟล์ PDF จาก Gmail ของคุณทันที ถ้าเว้นว่างไว้ แอปจะเปิดเมนูแชร์/โปรแกรมอีเมล์แทน</p>
+      <div class="fg"><label>ลิงก์ Web App (https://script.google.com/macros/s/.../exec)</label><input type="url" id="smurl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+      <div class="fg"><label>รหัสลับ (ตรงกับ TOKEN ในสคริปต์)</label><input type="text" id="smtok" placeholder="รหัสที่ตั้งเอง" autocomplete="off"></div>
+      <button class="btn btn-o btn-sm" onclick="clearSavedSig()">🗑️ ลบลายเซ็นที่จำไว้</button>
+    </div>
+  </div>
+  <div class="card">
     <div class="ct">💾 สำรอง/กู้คืนข้อมูล</div>
     <div class="fs">
       <p class="mu" style="font-size:12px;margin-bottom:10px">ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ถ้าล้างข้อมูลเบราว์เซอร์จะหาย ควรสำรองเป็นระยะ</p>
@@ -912,16 +921,26 @@ function pdfSum(start,end){
   showSigModal(start,end);
 }
 
+function getSig(){try{return localStorage.getItem('nitori_sig')||null}catch(e){return null}}
+function clearSavedSig(){try{localStorage.removeItem('nitori_sig')}catch(e){}toast('ลบลายเซ็นที่จำไว้แล้ว','ok');}
+function sigGo(start,end,kind,useSig){
+  const sig=useSig?captureSig():null;
+  const sv=document.getElementById('sigsave');
+  if(sig&&sv&&sv.checked){try{localStorage.setItem('nitori_sig',sig)}catch(e){}}
+  closeModal();doPDF(start,end,kind,sig);
+}
 function showSigModal(start,end,kind){
   kind=kind||'';
+  if(kind){const sg=getSig();if(sg){doPDF(start,end,kind,sg);return;}}
   document.getElementById('mc').innerHTML=`
     <div class="mt">✍️ เซ็นลายเซ็นก่อนสร้าง PDF</div>
     <p class="mu" style="margin-bottom:12px;font-size:13px">วาดลายเซ็นในกรอบด้านล่าง หรือกด "ข้าม" เพื่อสร้าง PDF โดยไม่เซ็น</p>
     <canvas id="sig-cv" style="border:2px solid var(--bdr);border-radius:10px;width:100%;background:#fff;cursor:crosshair;touch-action:none" height="140"></canvas>
+    ${kind?'<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px"><input type="checkbox" id="sigsave" checked> จำลายเซ็นนี้ไว้ ครั้งต่อไปกดส่งได้เลยไม่ต้องเซ็นซ้ำ</label>':''}
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="clearSig()">🗑️ ล้างลายเซ็น</button>
-      <button class="btn btn-w btn-sm" onclick="doPDF('${start}','${end}','${kind}',null);closeModal()">ข้าม</button>
-      <button class="btn btn-p" style="flex:1" onclick="doPDF('${start}','${end}','${kind}',captureSig());closeModal()">${kind==='wk-send'?'📧 สร้าง PDF + ส่งหัวหน้า':kind?'📄 สร้าง PDF สัปดาห์':'📄 สร้าง PDF (A4 หน้าเดียว)'}</button>
+      <button class="btn btn-w btn-sm" onclick="sigGo('${start}','${end}','${kind}',false)">ข้าม</button>
+      <button class="btn btn-p" style="flex:1" onclick="sigGo('${start}','${end}','${kind}',true)">${kind==='wk-send'?'📧 สร้าง PDF + ส่งหัวหน้า':kind?'📄 สร้าง PDF สัปดาห์':'📄 สร้าง PDF (A4 หน้าเดียว)'}</button>
       ${kind?'':`<button class="btn btn-o btn-sm" onclick="buildPDF('${start}','${end}',captureSig());closeModal()">🖨️ พิมพ์แทน</button>`}
     </div>
   `;
@@ -1206,6 +1225,18 @@ ${lines}
 ${driver}`;
   return{subject,body};
 }
+let sending=false;
+async function sendDirect(blob,name,mail){
+  const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob);});
+  const payload={token:CFG.mailToken||'',subject:mail.subject,body:mail.body,filename:name,pdf:b64};
+  let r;
+  try{r=await fetch(CFG.mailUrl,{method:'POST',body:JSON.stringify(payload)});}
+  catch(e){toast('ส่งอัตโนมัติไม่สำเร็จ (เน็ตหรือลิงก์ผิด) — ใช้วิธีแชร์แทน','err');await deliverPDF(blob,name,mail);return;}
+  let j=null;try{j=await r.json();}catch(e){}
+  if(j&&j.ok)toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว','ok');
+  else if(j){toast('ส่งไม่สำเร็จ: '+(j.error==='token'?'รหัสลับไม่ตรงกับในสคริปต์':j.error),'err');}
+  else toast('ส่งคำขอแล้ว แต่ยืนยันผลไม่ได้ — ตรวจกล่องจดหมายส่งออกใน Gmail','ok');
+}
 async function deliverPDF(blob,name,mail){
   const file=new File([blob],name,{type:'application/pdf'});
   if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -1247,8 +1278,11 @@ async function savePDF(start,end,sigData){
 async function weeklyPDF(start,end,sigData,send){
   if(!needLibs())return;
   const boss=(CFG.boss||'').trim();
-  if(send&&!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
-  toast('⏳ กำลังรวมไฟล์ PDF...');
+  const direct=send&&!!CFG.mailUrl;
+  if(send&&!direct&&!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
+  if(sending)return;
+  sending=true;
+  toast(direct?'⏳ กำลังสร้างและส่งอีเมล์...':'⏳ กำลังรวมไฟล์ PDF...');
   try{
     const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
     const cv=await summaryCanvas(start,end,sigData,'สรุปงานประจำสัปดาห์');
@@ -1259,8 +1293,12 @@ async function weeklyPDF(start,end,sigData,send){
       pages.forEach(pc=>addCanvasPage(pdf,pc,false,false));
     }
     const name=`NITORI_สรุปงานสัปดาห์_${start}_ถึง_${end}.pdf`;
-    await deliverPDF(pdf.output('blob'),name,send?weekMail(start,end,items.length):null);
+    const blob=pdf.output('blob');
+    const mail=send?weekMail(start,end,items.length):null;
+    if(direct)await sendDirect(blob,name,mail);
+    else await deliverPDF(blob,name,mail);
   }catch(err){toast('สร้าง PDF ไม่สำเร็จ','err');}
+  finally{sending=false;}
 }
 function doPDF(start,end,kind,sig){
   if(kind==='wk-send')weeklyPDF(start,end,sig,true);
@@ -1285,6 +1323,8 @@ function loadCfg(){
   document.getElementById('sname').value=CFG.name||'';
   document.getElementById('sboss').value=CFG.boss||'';
   document.getElementById('struck').value=CFG.truck||'';
+  document.getElementById('smurl').value=CFG.mailUrl||'';
+  document.getElementById('smtok').value=CFG.mailToken||'';
   document.getElementById('srent').value=CFG.rent||'';
   document.getElementById('sfuel').value=CFG.fuel||'r5';
   document.getElementById('stax').value=CFG.tax||'1';
@@ -1300,6 +1340,8 @@ function saveSettings(){
     name:document.getElementById('sname').value,
     boss:document.getElementById('sboss').value,
     truck:document.getElementById('struck').value,
+    mailUrl:document.getElementById('smurl').value.trim(),
+    mailToken:document.getElementById('smtok').value.trim(),
     rent:document.getElementById('srent').value,
     fuel:document.getElementById('sfuel').value,
     tax:document.getElementById('stax').value
