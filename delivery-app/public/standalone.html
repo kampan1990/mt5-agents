@@ -200,16 +200,16 @@ input:checked+.tgt:before{transform:translateX(20px)}
 <div id="pg-reports" class="page">
   <div class="ph" style="background:linear-gradient(135deg,#11998e,#2ecc71)"><h1>📊 รายงาน</h1></div>
   <div class="tabs">
-    <button class="tab active" onclick="swTab('daily',this)">รายวัน</button>
+    <button class="tab active" onclick="swTab('daily',this)">📅 รายสัปดาห์</button>
     <button class="tab" onclick="swTab('sum',this)">สรุป 15 วัน</button>
     <button class="tab" onclick="swTab('excel',this)">📊 CSV</button>
   </div>
   <div id="tab-daily">
     <div class="card"><div class="fs">
-      <div class="fg"><label>เลือกวันที่</label><input type="date" id="rdate"></div>
-      <button class="btn btn-p" onclick="loadDR()">ดูรายงาน</button>
+      <div class="fg"><label>ส่งรายงานทุกวันศุกร์ — เลือกวันศุกร์ที่ปิดสัปดาห์</label><input type="date" id="wdate" onchange="loadWeek()"></div>
+      <div id="wrange" class="mu" style="font-size:13px"></div>
     </div></div>
-    <div id="dra"></div>
+    <div id="wka"></div>
   </div>
   <!-- Excel tab -->
   <div id="tab-excel" style="display:none">
@@ -444,9 +444,7 @@ function loadHome(){
       <div class="ir itot"><span class="lbl">รายได้สุทธิวันนี้</span><span class="val" style="color:var(--g);font-size:18px">${inc.net.toLocaleString()} ฿</span></div>`;
     ta.innerHTML=`
       <button class="btn btn-o btn-sm" onclick="editD(${d.id})">✏️ แก้ไข</button>
-      <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 LINE</button>
-      <button class="btn btn-g btn-sm" onclick="emailDay('${today}')">📧 อีเมล์</button>
-      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${today}')">📊 CSV+รูปบิล</button>`;
+      <button class="btn btn-p btn-sm" onclick="shareDay('${today}')">📤 LINE</button>`;
   }
   // Month stats
   const now=new Date();
@@ -674,8 +672,6 @@ function showModal(id){
     <div class="brow" style="flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="editD(${id})">✏️</button>
       <button class="btn btn-p btn-sm" onclick="shareDay('${d.date}')">📤 LINE</button>
-      <button class="btn btn-g btn-sm" onclick="emailDay('${d.date}')">📧 อีเมล์</button>
-      <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${d.date}')">📊 CSV</button>
       <button class="btn btn-d btn-sm" onclick="delD(${id})">🗑️</button>
     </div>`;
   document.getElementById('modal').classList.add('active');
@@ -701,7 +697,11 @@ function delD(id){
 
 /* ── Reports ── */
 function initRep(){
-  document.getElementById('rdate').value=todayStr();
+  const t=new Date();
+  const back=(t.getDay()+2)%7;                 // ย้อนไปวันศุกร์ล่าสุด (วันนี้ถ้าเป็นศุกร์)
+  t.setDate(t.getDate()-back);
+  document.getElementById('wdate').value=dStr(t);
+  loadWeek();
   const end=new Date();
   const start=new Date(end);start.setDate(start.getDate()-14);
   document.getElementById('sstart').value=dStr(start);
@@ -746,13 +746,13 @@ function downloadCSV(csvStr,filename){
 }
 
 /* ── Reports Tab CSV Export ── */
-function exportExcel(mode){
+function exportExcel(mode,s0,e0){
   const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
   let dels=all;
   let filename='NITORI_รายงานส่งงาน';
   if(mode==='range'){
-    const s=document.getElementById('xl-start').value;
-    const e=document.getElementById('xl-end').value;
+    const s=s0||document.getElementById('xl-start').value;
+    const e=e0||document.getElementById('xl-end').value;
     if(!s||!e){toast('กรุณาเลือกช่วงวันที่','err');return;}
     dels=all.filter(x=>x.date>=s&&x.date<=e);
     filename+=`_${s}_ถึง_${e}`;
@@ -788,58 +788,21 @@ function exportExcel(mode){
   toast('📥 ดาวน์โหลด CSV สำเร็จ (เปิดได้ใน Excel)','ok');
 }
 
-function loadDR(){
-  const date=document.getElementById('rdate').value;if(!date)return;
-  const dels=DB.getDeliveries();
-  const d=dels.find(x=>x.date===date);
-  const area=document.getElementById('dra');
-  if(!d){area.innerHTML='<div class="card p16 tc mu">ไม่พบข้อมูลวันที่นี้</div>';return;}
-  const inc=calcInc(d);
-  const col=CFG.fuel||'r5';
-  const colLabel={'r0':'24-27','r1':'27-30','r2':'30-33','r3':'33-36','r4':'36-39','r5':'39-42'}[col];
-  const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'ไม่มี';
-  const driver=CFG.name||'';
-  area.innerHTML=d.is_holiday?
-    `<div class="card" style="margin-top:8px">
-      <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:16px">
-        <p style="font-weight:700;font-size:16px">📋 รายงานประจำวัน ${fmtTH(date)}</p>
-        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 ${esc(driver)}</p>`:''}
-      </div>
-      <div style="text-align:center;padding:24px"><span style="font-size:48px">🏖️</span><p style="margin-top:8px;font-weight:600">วันหยุด</p></div>
-      <div style="padding:0 16px 16px;display:flex;gap:8px">
-        <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
-        <button class="btn btn-g btn-sm" onclick="emailDay('${date}')">📧 อีเมล์</button>
-        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 CSV+รูปบิล</button>
-      </div>
-    </div>`:
-    `<div class="card" style="margin-top:8px">
-      <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:16px">
-        <p style="font-weight:700;font-size:16px">📦 รายงานประจำวัน ${fmtTH(date)}</p>
-        ${driver?`<p style="opacity:.85;font-size:13px;margin-top:2px">👤 พนักงานขับรถ: ${esc(driver)}</p>`:''}
-      </div>
-      <div class="ir"><span class="lbl">เขต/อำเภอ / จังหวัด</span><span class="val">${esc(d.zone)||'-'}${d.province?' / '+esc(d.province):''}</span></div>
-      <div class="ir"><span class="lbl">จำนวนจุดส่ง</span><span class="val">${d.point_count||0} จุด</span></div>
-      <div class="ir"><span class="lbl">ระยะกิโล</span><span class="val">${d.distance||0} กม.</span></div>
-      <div class="ir"><span class="lbl">รวมค่าทางด่วน</span><span class="val">${inc.tl.toLocaleString()} ฿</span></div>
-      ${(d.floor_deliveries||[]).length?`<div class="ir"><span class="lbl">ชั้นที่ยกขึ้น/บ้าน</span><span class="val">${flTxt}</span></div>`:''}
-      ${d.notes?`<div class="ir"><span class="lbl">หมายเหตุ</span><span class="val">${esc(d.notes)}</span></div>`:''}
-      <div style="height:1px;background:var(--bdr);margin:4px 16px"></div>
-      <div class="ir"><span class="lbl" style="color:var(--mu)">เหมาจ่าย</span><span class="val">${inc.km.toLocaleString()} ฿</span></div>
-      ${inc.up?`<div class="ir"><span class="lbl" style="color:var(--mu)">ต่างจังหวัด</span><span class="val">${inc.up.toLocaleString()} ฿</span></div>`:''}
-      ${inc.pt?`<div class="ir"><span class="lbl" style="color:var(--mu)">จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${inc.pt.toLocaleString()} ฿</span></div>`:''}
-      ${inc.fl?`<div class="ir"><span class="lbl" style="color:var(--mu)">ยกชั้น</span><span class="val">${inc.fl.toLocaleString()} ฿</span></div>`:''}
-      <div class="inet" style="margin:12px 16px 8px"><span>รวมรายได้</span><span>${inc.tot.toLocaleString()} ฿</span></div>
-      <div style="padding:0 16px 16px;display:flex;gap:8px">
-        <button class="btn btn-p btn-sm" onclick="shareDay('${date}')">📤 แชร์ LINE</button>
-        <button class="btn btn-g btn-sm" onclick="emailDay('${date}')">📧 อีเมล์</button>
-        <button class="btn btn-w btn-sm" onclick="exportDailyExcel('${date}')">📊 CSV+รูปบิล</button>
-      </div>
-    </div>`;
+function weekRange(endStr){
+  const e=new Date(endStr+'T00:00:00');const b=new Date(e);b.setDate(b.getDate()-6);
+  return[dStr(b),endStr];
+}
+function loadWeek(){
+  const end=document.getElementById('wdate').value;if(!end)return;
+  const[start]=weekRange(end);
+  const dow=new Date(end+'T00:00:00').getDay();
+  document.getElementById('wrange').innerHTML=`สัปดาห์ ${thDate(start)} – ${thDate(end)} (เสาร์–ศุกร์)${dow!==5?' <b style="color:var(--r)">· วันที่เลือกไม่ใช่วันศุกร์</b>':''}`;
+  loadSum(start,end,'wka',true);
 }
 
-function loadSum(){
-  const start=document.getElementById('sstart').value;
-  const end=document.getElementById('send').value;
+function loadSum(start0,end0,areaId,weekly){
+  const start=start0||document.getElementById('sstart').value;
+  const end=end0||document.getElementById('send').value;
   if(!start||!end)return;
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
@@ -849,12 +812,12 @@ function loadSum(){
     const inc=calcInc(d);
     totKm+=inc.km;totFl+=inc.fl;totTl+=inc.tl;totRent+=inc.rent;totUp+=inc.up;totPt+=inc.pt;totD++;
     totKmDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
-    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${esc(d.zone)||''}${d.province?' / '+esc(d.province):''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.${inc.tl?' · ทางด่วน '+inc.tl.toLocaleString():''}</small><br>${bonusTags(inc,true)}</span><span class="val" style="color:var(--g)">${inc.tot.toLocaleString()} ฿</span></div>`;
+    return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${esc(d.zone)||''}${d.province?' / '+esc(d.province):''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.${inc.tl?' · ทางด่วน '+inc.tl.toLocaleString():''}${weekly?' · 🧾 '+DB.getTollPhotos(d.id).length+' รูป':''}</small><br>${bonusTags(inc,true)}</span><span class="val" style="color:var(--g)">${inc.tot.toLocaleString()} ฿</span></div>`;
   }).join('');
   const totInc=totKm+totFl+totTl+totUp+totPt;
   const taxAmt=totInc*tax;
   const net=totInc-totRent-taxAmt;
-  const area=document.getElementById('suma');
+  const area=document.getElementById(areaId||'suma');
   area.innerHTML=`
     <div class="inet2">
       <div class="lbl" style="margin-bottom:4px">สรุปรายได้ ${start} – ${end}</div>
@@ -874,11 +837,16 @@ function loadSum(){
       <div class="ir" style="color:var(--r)"><span class="lbl">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</span><span class="val">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
       <div class="inet" style="margin:12px 16px 16px"><span>รับสุทธิ</span><span>${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
     </div>
-    <div style="padding:0 16px 16px;display:flex;gap:8px">
+    ${weekly?`<div style="padding:0 16px 16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-p" style="flex:1 1 100%" onclick="showSigModal('${start}','${end}','wk-send')">📧 สร้าง PDF + ส่งหัวหน้า</button>
+      <button class="btn btn-g btn-sm" onclick="showSigModal('${start}','${end}','wk-save')">📄 บันทึก PDF</button>
+      <button class="btn btn-w btn-sm" onclick="exportExcel('range','${start}','${end}')">📊 CSV (Excel)</button>
+      <button class="btn btn-o btn-sm" onclick="shareSum('${start}','${end}')">📤 LINE</button>
+    </div>`:`<div style="padding:0 16px 16px;display:flex;gap:8px">
       <button class="btn btn-g btn-sm" onclick="shareSum('${start}','${end}')">📤 แชร์ LINE</button>
       <button class="btn btn-o btn-sm" onclick="emailSum('${start}','${end}')">📧 อีเมล์</button>
       <button class="btn btn-p btn-sm" onclick="pdfSum('${start}','${end}')">📄 ดาวน์โหลด PDF</button>
-    </div>`;
+    </div>`}`;
 }
 
 /* ── Share via LINE ── */
@@ -903,66 +871,6 @@ function shareDay(date){
   copyAndShare(txt);
 }
 
-/* ── Email daily report ── */
-async function emailDay(date){
-  const dels=DB.getDeliveries();
-  const d=dels.find(x=>x.date===date);
-  if(!d)return;
-  const boss=(CFG.boss||'').trim();
-  const driver=CFG.name||'';
-  if(!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
-  const [yy,mm,dd]=date.split('-');
-  const dTH=`${dd}/${mm}/${+yy+543}`;
-  const tollPics=DB.getTollPhotos(d.id);
-  const subject=`${driver} นำส่งแผนงานวันที่ ${dTH}`;
-  let bodyText;
-  if(d.is_holiday){
-    bodyText=`เรียน หัวหน้า
-
-${driver} นำส่งแผนงานวันที่ ${dTH}
-
-วันนี้เป็นวันหยุด ไม่มีงานวิ่ง
-
-ขอแสดงความนับถือ
-${driver}`;
-  } else {
-    const inc=calcInc(d);
-    const fls=(d.floor_deliveries||[]).filter(f=>f.floor>=3);
-    const flTxt=fls.length?'มี — '+fls.map(f=>`ชั้น ${f.floor} × ${f.count||1} ครั้ง (${(f.floor-2)*100*(f.count||1)} บาท)`).join(', '):'ไม่มี';
-    const tollAtt=tollPics.length?`บิลค่าทางด่วน ${tollPics.length} ไฟล์ (รวม ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท)`:`ไม่มีบิลค่าทางด่วนแนบ (ค่าทางด่วน ${(parseFloat(d.toll_fee)||0).toLocaleString()} บาท)`;
-    bodyText=`เรียน หัวหน้า
-
-${driver} นำส่งแผนงานวันที่ ${dTH}${CFG.truck?' ('+CFG.truck+')':''}
-
-รายละเอียดไฟล์แนบ:
-- ${tollAtt}
-
-รายละเอียดงาน:
-- เขตที่วิ่ง: ${d.zone||'-'}
-- จังหวัดที่วิ่ง: ${d.province||'-'}
-- จำนวนจุดที่วิ่ง: ${d.point_count||0} จุด
-- ระยะทาง: ${d.distance||0} กิโลเมตร
-- ขึ้นชั้น: ${flTxt}
-- วิ่งต่างจังหวัด: ${d.upcountry?'ใช่':'ไม่'}${d.notes?'\n- หมายเหตุ: '+d.notes:''}
-
-ขอแสดงความนับถือ
-${driver}`;
-  }
-  if(tollPics.length&&navigator.share){
-    try{
-      const files=tollPics.map((b64,i)=>new File([b64ToBlob(b64)],`บิลทางด่วน_${date}_${i+1}.jpg`,{type:'image/jpeg'}));
-      if(navigator.canShare&&navigator.canShare({files})){
-        await navigator.share({title:subject,text:bodyText,files});
-        return;
-      }
-    }catch(e){}
-  }
-  window.location.href=`mailto:${boss}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
-  if(tollPics.length){
-    setTimeout(()=>showTollDownloadModal(tollPics,date),800);
-  }
-}
-
 function thDate(ds){const [y,m,d]=ds.split('-');return`${d}/${m}/${+y+543}`}
 function emailSum(start,end){
   const boss=(CFG.boss||'').trim();
@@ -980,74 +888,6 @@ function emailSum(start,end){
   const taxAmt=totInc*tax;
   const body=`เรียน หัวหน้า\n\nสรุปรายได้ประจำงวด ${start} ถึง ${end}\nพนักงานขับรถ: ${driver}\n──────────────────\n${lines}\n──────────────────\nรวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\n\nขอแสดงความนับถือ\n${driver}`;
   window.location.href=`mailto:${boss}?subject=${encodeURIComponent(driver+' นำส่งสรุปงานวันที่ '+thDate(start)+' - '+thDate(end))}&body=${encodeURIComponent(body)}`;
-}
-
-function b64ToBlob(base64){
-  const[hd,data]=base64.split(',');
-  const mime=hd.match(/:(.*?);/)[1];
-  const bin=atob(data);const arr=new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
-  return new Blob([arr],{type:mime});
-}
-
-function showTollDownloadModal(pics,date){
-  document.getElementById('mc').innerHTML=`
-    <div class="mt">📎 แนบรูปบิลค่าทางด่วน</div>
-    <p style="font-size:14px;color:#555;margin-bottom:12px">อีเมล์เปิดแล้ว — กดดาวน์โหลดรูปด้านล่าง แล้วแนบในอีเมล์:</p>
-    ${pics.map((p,i)=>`
-      <div style="margin-bottom:10px;border:1px solid var(--bdr);border-radius:8px;overflow:hidden">
-        <img src="${p}" style="width:100%;max-height:180px;object-fit:cover;display:block">
-        <a href="${p}" download="บิลทางด่วน_${date||''}_${i+1}.jpg" class="btn btn-g btn-sm" style="display:flex;text-align:center;margin:8px;text-decoration:none">⬇️ ดาวน์โหลดรูปบิล ${i+1}</a>
-      </div>`).join('')}
-    <button class="btn btn-o btn-sm" style="width:100%;margin-top:4px" onclick="closeModal()">ปิด</button>
-  `;
-  document.getElementById('modal').classList.add('active');
-}
-
-/* ── Export Daily CSV + Toll Photos ── */
-function exportDailyExcel(date){
-  const all=DB.getDeliveries().sort((a,b)=>a.date.localeCompare(b.date));
-  const dayNames=['อา','จ','อ','พ','พฤ','ศ','ส'];
-  const headers=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','รวมค่าทางด่วน (บาท)','ค่าเช่ารถ (บาท)','หมายเหตุ','สถานะ'];
-  const rows=all.map(d=>{
-    const dn=dayNames[new Date(d.date+'T00:00:00').getDay()];
-    if(d.is_holiday)return[d.date,dn,'','','','','','','','','หยุด'];
-    const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น${f.floor}×${f.count||1}ครั้ง`).join(', ')||'';
-    return[d.date,dn,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,flTxt,parseFloat(d.toll_fee)||0,parseFloat(d.rent_fee)||0,d.notes||'','วิ่งงาน'];
-  });
-  const driver=CFG.name||'';
-  const csv=makeCSV([headers,...rows]);
-  const filename=`NITORI_ข้อมูลวิ่งงาน${driver?'_'+driver:''}_${date}.csv`;
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const d=all.find(x=>x.date===date);
-  const tollPics=d?DB.getTollPhotos(d.id):[];
-  shareExcelWithPhotos(blob,filename,date,tollPics);
-}
-
-async function shareExcelWithPhotos(xlsxBlob,filename,date,tollPics){
-  const mime=filename.endsWith('.csv')?'text/csv':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  const xlFile=new File([xlsxBlob],filename,{type:mime});
-  const files=[xlFile];
-  if(tollPics.length){
-    tollPics.forEach((b64,i)=>{
-      try{files.push(new File([b64ToBlob(b64)],`บิลทางด่วน_${date}_${i+1}.jpg`,{type:'image/jpeg'}));}catch(e){}
-    });
-  }
-  if(navigator.share){
-    try{
-      const shareData={title:`ข้อมูลวิ่งงาน NITORI ${date}`,files};
-      if(navigator.canShare&&navigator.canShare(shareData)){
-        await navigator.share(shareData);
-        return;
-      }
-    }catch(e){}
-  }
-  // Fallback: download xlsx
-  const url=URL.createObjectURL(xlsxBlob);
-  const a=document.createElement('a');a.href=url;a.download=filename;a.click();
-  URL.revokeObjectURL(url);
-  toast('📥 ดาวน์โหลด CSV สำเร็จ','ok');
-  if(tollPics.length)setTimeout(()=>showTollDownloadModal(tollPics,date),600);
 }
 
 function shareSum(start,end){
@@ -1072,16 +912,17 @@ function pdfSum(start,end){
   showSigModal(start,end);
 }
 
-function showSigModal(start,end){
+function showSigModal(start,end,kind){
+  kind=kind||'';
   document.getElementById('mc').innerHTML=`
     <div class="mt">✍️ เซ็นลายเซ็นก่อนสร้าง PDF</div>
     <p class="mu" style="margin-bottom:12px;font-size:13px">วาดลายเซ็นในกรอบด้านล่าง หรือกด "ข้าม" เพื่อสร้าง PDF โดยไม่เซ็น</p>
     <canvas id="sig-cv" style="border:2px solid var(--bdr);border-radius:10px;width:100%;background:#fff;cursor:crosshair;touch-action:none" height="140"></canvas>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn btn-o btn-sm" onclick="clearSig()">🗑️ ล้างลายเซ็น</button>
-      <button class="btn btn-w btn-sm" onclick="savePDF('${start}','${end}',null);closeModal()">ข้าม</button>
-      <button class="btn btn-p" style="flex:1" onclick="savePDF('${start}','${end}',captureSig());closeModal()">📄 สร้าง PDF (A4 หน้าเดียว)</button>
-      <button class="btn btn-o btn-sm" onclick="buildPDF('${start}','${end}',captureSig());closeModal()">🖨️ พิมพ์แทน</button>
+      <button class="btn btn-w btn-sm" onclick="doPDF('${start}','${end}','${kind}',null);closeModal()">ข้าม</button>
+      <button class="btn btn-p" style="flex:1" onclick="doPDF('${start}','${end}','${kind}',captureSig());closeModal()">${kind==='wk-send'?'📧 สร้าง PDF + ส่งหัวหน้า':kind?'📄 สร้าง PDF สัปดาห์':'📄 สร้าง PDF (A4 หน้าเดียว)'}</button>
+      ${kind?'':`<button class="btn btn-o btn-sm" onclick="buildPDF('${start}','${end}',captureSig());closeModal()">🖨️ พิมพ์แทน</button>`}
     </div>
   `;
   document.getElementById('modal').classList.add('active');
@@ -1114,7 +955,7 @@ function captureSig(){
   return hasInk?sigPad.canvas.toDataURL('image/png'):null;
 }
 
-function pdfHTML(start,end,sigData,forCanvas){
+function pdfHTML(start,end,sigData,forCanvas,title){
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
   const driver=esc(CFG.name)||'................................';
@@ -1179,7 +1020,7 @@ function pdfHTML(start,end,sigData,forCanvas){
 </div>@@/PO@@
 
 <div id="fitbox"><div id="pg">
-<h2>📋 สรุปรายได้ประจำงวด</h2>
+<h2>📋 ${title||'สรุปรายได้ประจำงวด'}</h2>
 <div class="sub">บริษัท NITORI · วันที่ ${start} ถึง ${end}</div>
 <div class="info">
   <span><strong>ชื่อพนักงานขับรถ:</strong> ${driver}</span>
@@ -1271,39 +1112,160 @@ function buildPDF(start,end,sigData){
   if(!w){toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์','err');return;}
   w.document.write(pdfHTML(start,end,sigData,false));w.document.close();
 }
-/* สร้างไฟล์ PDF A4 หน้าเดียวโดยตรง (ไม่พึ่งหน้าต่างพิมพ์ของเครื่อง) */
-async function savePDF(start,end,sigData){
-  if(!window.html2canvas||!window.jspdf){toast('โหลดตัวสร้าง PDF ไม่ได้ (ต้องต่ออินเทอร์เน็ต) — ใช้ปุ่มพิมพ์แทน','err');return;}
-  toast('⏳ กำลังสร้าง PDF...');
+/* ── PDF โดยตรง: หน้าสรุป A4 + (สัปดาห์) หน้าบิลค่าทางด่วนเรียงวันที่ ── */
+function needLibs(){
+  if(!window.html2canvas||!window.jspdf){toast('โหลดตัวสร้าง PDF ไม่ได้ (ต้องต่ออินเทอร์เน็ต)','err');return false;}
+  return true;
+}
+async function summaryCanvas(start,end,sigData,title){
   const fr=document.createElement('iframe');
   fr.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1200px;border:0;background:#fff';
   document.body.appendChild(fr);
   try{
-    await new Promise(res=>{fr.onload=res;fr.srcdoc=pdfHTML(start,end,sigData,true);});
+    await new Promise(res=>{fr.onload=res;fr.srcdoc=pdfHTML(start,end,sigData,true,title);});
     const doc=fr.contentDocument;
     try{await doc.fonts.ready;}catch(e){}
     const pg=doc.getElementById('pg');
     pg.style.width='718px';pg.style.padding='0';
     doc.body.style.width='718px';
     fr.style.height=(pg.offsetHeight+40)+'px';
-    const cv=await html2canvas(pg,{scale:2,backgroundColor:'#ffffff',windowWidth:794});
-    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    return await html2canvas(pg,{scale:2,backgroundColor:'#ffffff',windowWidth:794});
+  }finally{fr.remove();}
+}
+function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
+/* หน้าบิลค่าทางด่วน: 4 รูป/หน้า (2x2) พร้อมวันที่กำกับ เรียงตามวันที่ */
+async function billPages(start,end,items){
+  const W=1240,H=1754,M=60,GAP=40,HEAD=110;
+  const cw=(W-2*M-GAP)/2, ch=(H-HEAD-M-GAP)/2;
+  const driver=CFG.name||'';
+  const pages=[];
+  const total=Math.ceil(items.length/4);
+  for(let p=0;p<total;p++){
+    const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+    const g=cv.getContext('2d');
+    g.fillStyle='#fff';g.fillRect(0,0,W,H);
+    g.fillStyle='#111';g.font='bold 38px Sarabun,Tahoma,"Noto Sans Thai",sans-serif';g.textBaseline='top';
+    g.fillText(`🧾 บิลค่าทางด่วน ${driver?'· '+driver:''}`,M,40);
+    g.font='28px Sarabun,Tahoma,"Noto Sans Thai",sans-serif';g.fillStyle='#555';
+    g.fillText(`สัปดาห์ ${thDate(start)} – ${thDate(end)}   หน้า ${p+1}/${total}`,M,88);
+    for(let k=0;k<4;k++){
+      const it=items[p*4+k];if(!it)break;
+      const x=M+(k%2)*(cw+GAP), y=HEAD+M/2+Math.floor(k/2)*(ch+GAP);
+      g.strokeStyle='#ccc';g.lineWidth=2;g.strokeRect(x,y,cw,ch);
+      g.fillStyle='#111';g.font='bold 30px Sarabun,Tahoma,"Noto Sans Thai",sans-serif';
+      g.fillText(`${thDate(it.date)} · บิลที่ ${it.n}/${it.of}`,x+14,y+10);
+      try{
+        const im=await loadImg(it.src);
+        const bx=x+10,by=y+56,bw=cw-20,bh=ch-66;
+        const sc=Math.min(bw/im.width,bh/im.height);
+        const w=im.width*sc,h=im.height*sc;
+        g.drawImage(im,bx+(bw-w)/2,by+(bh-h)/2,w,h);
+      }catch(e){g.fillStyle='#c0392b';g.font='26px sans-serif';g.fillText('(เปิดรูปไม่ได้)',x+14,y+70);}
+    }
+    pages.push(cv);
+  }
+  return pages;
+}
+function weekBills(start,end){
+  const items=[];
+  DB.getDeliveries().filter(d=>d.date>=start&&d.date<=end&&!d.is_holiday).sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
+    const ps=DB.getTollPhotos(d.id);
+    ps.forEach((src,i)=>items.push({date:d.date,n:i+1,of:ps.length,src}));
+  });
+  return items;
+}
+function weekMail(start,end,nBills){
+  const driver=CFG.name||'';
+  const tax=parseFloat(CFG.tax||'1')/100;
+  const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
+  let totInc=0,totRent=0,days=0,up=0,fl=false;
+  const lines=dels.map(d=>{
+    if(d.is_holiday)return`${thDate(d.date)}: หยุด`;
+    const inc=calcInc(d);totInc+=inc.tot;totRent+=inc.rent;days++;if(inc.up)up++;if(inc.fl)fl=true;
+    const bt=bonusTags(inc,false);
+    return`${thDate(d.date)}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0} จุด ${d.distance||0} กม.${bt?' ['+bt+']':''}`;
+  }).join('\n');
+  const taxAmt=totInc*tax;
+  const subject=`${driver} นำส่งแผนงานวันที่ ${thDate(start)} - ${thDate(end)}`;
+  const body=`เรียน หัวหน้า
+
+${driver} นำส่งแผนงานวันที่ ${thDate(start)} - ${thDate(end)}
+
+รายละเอียดไฟล์แนบ:
+- ไฟล์ PDF 1 ไฟล์ ประกอบด้วยตารางสรุปงานรายวันและรูปบิลค่าทางด่วน ${nBills} รูป เรียงตามวันที่
+
+รายละเอียดงาน:
+${lines}
+──────────────────
+วิ่งงาน ${days} วัน · ต่างจังหวัด ${up} วัน · ขึ้นชั้น: ${fl?'มี':'ไม่มี'}
+รวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}
+หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท
+รับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท
+
+ขอแสดงความนับถือ
+${driver}`;
+  return{subject,body};
+}
+async function deliverPDF(blob,name,mail){
+  const file=new File([blob],name,{type:'application/pdf'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{
+      await navigator.share(mail?{files:[file],title:mail.subject,text:mail.body}:{files:[file],title:name});
+      toast('✅ เปิดเมนูแชร์แล้ว','ok');return;
+    }catch(e){if(e&&e.name==='AbortError')return;}
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  if(mail){
+    const boss=(CFG.boss||'').trim();
+    toast('✅ ดาวน์โหลด PDF แล้ว — แนบไฟล์ในอีเมล์ที่เปิดขึ้น','ok');
+    setTimeout(()=>{window.location.href=`mailto:${boss}?subject=${encodeURIComponent(mail.subject)}&body=${encodeURIComponent(mail.body)}`;},900);
+  } else toast('✅ ดาวน์โหลด PDF แล้ว','ok');
+}
+function addCanvasPage(pdf,cv,first,fit){
+  if(!first)pdf.addPage();
+  const data=cv.toDataURL('image/jpeg',0.9);
+  if(fit){
     let w=190,h=cv.height/cv.width*190;
     if(h>277){h=277;w=h*cv.width/cv.height;}
-    pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',(210-w)/2,10,w,h);
-    const name=`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`;
-    const blob=pdf.output('blob');
-    const file=new File([blob],name,{type:'application/pdf'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
-      try{await navigator.share({files:[file],title:name});toast('✅ สร้าง PDF แล้ว','ok');return;}catch(e){if(e&&e.name==='AbortError')return;}
+    pdf.addImage(data,'JPEG',(210-w)/2,10,w,h);
+  } else pdf.addImage(data,'JPEG',0,0,210,297);
+}
+/* สรุปช่วงวันที่: A4 หน้าเดียว */
+async function savePDF(start,end,sigData){
+  if(!needLibs())return;
+  toast('⏳ กำลังสร้าง PDF...');
+  try{
+    const cv=await summaryCanvas(start,end,sigData);
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    addCanvasPage(pdf,cv,true,true);
+    await deliverPDF(pdf.output('blob'),`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`,null);
+  }catch(err){toast('สร้าง PDF ไม่สำเร็จ — ใช้ปุ่มพิมพ์แทน','err');}
+}
+/* รายสัปดาห์: หน้าแรกตารางสรุป + หน้าถัดไปบิลค่าทางด่วนเรียงวันที่ รวมไฟล์เดียว */
+async function weeklyPDF(start,end,sigData,send){
+  if(!needLibs())return;
+  const boss=(CFG.boss||'').trim();
+  if(send&&!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
+  toast('⏳ กำลังรวมไฟล์ PDF...');
+  try{
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    const cv=await summaryCanvas(start,end,sigData,'สรุปงานประจำสัปดาห์');
+    addCanvasPage(pdf,cv,true,true);
+    const items=weekBills(start,end);
+    if(items.length){
+      const pages=await billPages(start,end,items);
+      pages.forEach(pc=>addCanvasPage(pdf,pc,false,false));
     }
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),4000);
-    toast('✅ ดาวน์โหลด PDF แล้ว','ok');
-  }catch(err){
-    toast('สร้าง PDF ไม่สำเร็จ — ใช้ปุ่มพิมพ์แทน','err');
-  }finally{fr.remove();}
+    const name=`NITORI_สรุปงานสัปดาห์_${start}_ถึง_${end}.pdf`;
+    await deliverPDF(pdf.output('blob'),name,send?weekMail(start,end,items.length):null);
+  }catch(err){toast('สร้าง PDF ไม่สำเร็จ','err');}
+}
+function doPDF(start,end,kind,sig){
+  if(kind==='wk-send')weeklyPDF(start,end,sig,true);
+  else if(kind==='wk-save')weeklyPDF(start,end,sig,false);
+  else savePDF(start,end,sig);
 }
 
 function copyAndShare(txt){
