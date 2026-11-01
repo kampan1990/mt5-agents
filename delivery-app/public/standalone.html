@@ -298,7 +298,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.5 (1 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.6 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -848,9 +848,9 @@ function loadSum(start0,end0,areaId,weekly){
     </div>
     ${weekly?`<div class="mu" style="padding:0 16px 10px;font-size:13px">🧾 รูปบิลทางด่วนในสัปดาห์นี้ <b>${weekBills(start,end).length}</b> รูป — ${weekBills(start,end).length?'จะรวมเป็น PDF บิลแยก 1 ไฟล์ แนบไปกับ PDF สรุป':'ไม่มีรูป จึงไม่มี PDF บิล (เพิ่มรูปที่หน้า บันทึก → รูปบิลค่าทางด่วน)'}</div>
     <div style="padding:0 16px 16px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-p" style="flex:1 1 100%" onclick="showSigModal('${start}','${end}','wk-send')">📧 ส่งหัวหน้า (PDF สรุป + PDF บิลทางด่วน)</button>
-      <button class="btn btn-g btn-sm" onclick="showSigModal('${start}','${end}','wk-save')">📄 บันทึก PDF 2 ไฟล์</button>
-      <button class="btn btn-w btn-sm" onclick="exportExcel('range','${start}','${end}')">📊 CSV (Excel)</button>
+      <button class="btn btn-p" style="flex:1 1 100%" onclick="showSigModal('${start}','${end}','wk-send')">📧 ส่งหัวหน้า (PDF สรุป + PDF บิล + Excel)</button>
+      <button class="btn btn-g btn-sm" onclick="showSigModal('${start}','${end}','wk-save')">📄 บันทึกไฟล์ทั้งหมด</button>
+      <button class="btn btn-w btn-sm" onclick="downloadWeekXlsx('${start}','${end}')">📊 Excel (.xlsx)</button>
       <button class="btn btn-o btn-sm" onclick="shareSum('${start}','${end}')">📤 LINE</button>
     </div>`:`<div style="padding:0 16px 16px;display:flex;gap:8px">
       <button class="btn btn-g btn-sm" onclick="shareSum('${start}','${end}')">📤 แชร์ LINE</button>
@@ -1168,6 +1168,16 @@ function fitText(g,t,maxW){
   while(t.length>1&&g.measureText(t+'…').width>maxW)t=t.slice(0,-1);
   return t+'…';
 }
+function wrapLines(g,text,maxW){
+  text=String(text==null?'':text);
+  if(!text)return[''];
+  const out=[];let cur='';
+  for(const ch of text){
+    if(cur&&g.measureText(cur+ch).width>maxW){out.push(cur);cur=ch===' '?'':ch;}
+    else cur+=ch;
+  }
+  out.push(cur);return out;
+}
 async function summaryCanvas(start,end,sigData,title){
   const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;
   const g=cv.getContext('2d');
@@ -1179,48 +1189,58 @@ async function summaryCanvas(start,end,sigData,title){
   const f=(n)=>n.toLocaleString();
   const T={km:0,fl:0,tl:0,up:0,pt:0,rent:0,days:0,hol:0,dist:0,pts:0};
   const rows=dels.map(d=>{
-    if(d.is_holiday){T.hol++;return{date:d.date,hol:true};}
+    if(d.is_holiday){T.hol++;return{hol:true,cells:[fmtShort(d.date),'วันหยุด','','','','','','']};}
     const inc=calcInc(d);
     T.km+=inc.km;T.fl+=inc.fl;T.tl+=inc.tl;T.up+=inc.up;T.pt+=inc.pt;T.rent+=inc.rent;T.days++;
     T.dist+=parseFloat(d.distance)||0;T.pts+=parseInt(d.point_count)||0;
     const bonus=[inc.up?'ตจว. +'+inc.up:'',inc.pt?'จุด'+PT7_MIN+'+ +'+inc.pt:''].filter(Boolean).join('  ');
-    return{date:d.date,area:(d.zone||'-')+(d.province?' / '+d.province:''),pts:d.point_count||0,dist:d.distance||0,
-      fl:(d.floor_deliveries||[]).map(x=>`ชั้น${x.floor}×${x.count||1}`).join(',')||'-',tl:inc.tl,bonus,tot:inc.tot,rent:inc.rent};
+    return{hol:false,cells:[fmtShort(d.date),(d.zone||'-')+(d.province?' / '+d.province:''),d.point_count||0,d.distance||0,
+      (d.floor_deliveries||[]).map(x=>`ชั้น${x.floor}×${x.count||1}`).join(', ')||'-',f(inc.tl),bonus,f(inc.tot)]};
   });
   const totInc=T.km+T.fl+T.tl+T.up+T.pt, taxAmt=totInc*tax, net=totInc-T.rent-taxAmt;
-  // header
+  // header block
   g.fillStyle='#111';g.font='bold 48px '+FONT;g.textAlign='center';
-  g.fillText(title||'สรุปรายได้ประจำงวด',PDF_W/2,80);
+  g.fillText(title||'สรุปรายได้ประจำงวด',PDF_W/2,75);
   g.font='28px '+FONT;g.fillStyle='#555';
-  g.fillText(`บริษัท NITORI · วันที่ ${thDate(start)} ถึง ${thDate(end)}`,PDF_W/2,130);
+  g.fillText(`บริษัท NITORI · วันที่ ${thDate(start)} ถึง ${thDate(end)}`,PDF_W/2,125);
   g.textAlign='left';g.fillStyle='#111';g.font='28px '+FONT;
-  g.fillText(`พนักงานขับรถ: ${driver}${CFG.truck?'   ('+CFG.truck+')':''}`,M,185);
-  g.textAlign='right';g.fillText(`วันวิ่ง ${T.days} วัน · หยุด ${T.hol} วัน · ${f(T.dist)} กม. · ${T.pts} จุด`,PDF_W-M,185);
-  // table
-  const cols=[['วันที่',120,'l'],['เขต / จังหวัด',260,'l'],['จุด',70,'c'],['กม.',80,'c'],['ยกชั้น',130,'c'],['ทางด่วน',110,'r'],['โบนัส',210,'l'],['รายได้',140,'r']];
-  let y=225;const hh=52;
-  g.fillStyle='#1a1a2e';g.fillRect(M,y,TW,hh);
-  g.fillStyle='#fff';g.font='bold 24px '+FONT;
+  g.fillText(fitText(g,`พนักงานขับรถ: ${driver}${CFG.truck?'   ('+CFG.truck+')':''}`,TW),M,175);
+  g.fillStyle='#444';
+  g.fillText(`วันวิ่ง ${T.days} วัน · หยุด ${T.hol} วัน · ระยะทางรวม ${f(T.dist)} กม. · ${T.pts} จุด`,M,212);
+  // table layout: wrap cell text, shrink font until everything fits
+  const cols=[['วันที่',100,'l'],['เขต / จังหวัด',300,'l'],['จุด',60,'c'],['กม.',70,'c'],['ยกชั้น',150,'l'],['ทางด่วน',110,'r'],['โบนัส',180,'l'],['รายได้',150,'r']];
+  const y0=245,hh=52,bottomLimit=PDF_H-M-600;
+  let fs=26,layout=null;
+  for(;fs>=14;fs--){
+    g.font=fs+'px '+FONT;
+    const lh=Math.round(fs*1.3);
+    const rl=rows.map(r=>{
+      const lines=r.cells.map((c,k)=>wrapLines(g,c,cols[k][1]-20));
+      const n=Math.max.apply(null,lines.map(l=>l.length));
+      return{lines,h:n*lh+16};
+    });
+    const tot=rl.reduce((a,r)=>a+r.h,0);
+    layout={rl,lh,tot};
+    if(y0+hh+tot<=bottomLimit)break;
+  }
+  g.fillStyle='#1a1a2e';g.fillRect(M,y0,TW,hh);
+  g.fillStyle='#fff';g.font='bold 22px '+FONT;
   let x=M;
-  cols.forEach(c=>{g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';g.fillText(c[0],c[2]==='r'?x+c[1]-10:c[2]==='c'?x+c[1]/2:x+10,y+hh/2);x+=c[1];});
-  y+=hh;
-  const bottomLimit=PDF_H-M-600;
-  const rh=Math.max(26,Math.min(56,(bottomLimit-y)/Math.max(1,rows.length)));
-  g.font=Math.round(rh*0.46)+'px '+FONT;
+  cols.forEach(c=>{g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';g.fillText(c[0],c[2]==='r'?x+c[1]-10:c[2]==='c'?x+c[1]/2:x+10,y0+hh/2);x+=c[1];});
+  let y=y0+hh;
   rows.forEach((r,i)=>{
-    if(i%2){g.fillStyle='#f4f5f8';g.fillRect(M,y,TW,rh);}
-    g.fillStyle=r.hol?'#999':'#111';
+    const L=layout.rl[i];
+    if(i%2){g.fillStyle='#f4f5f8';g.fillRect(M,y,TW,L.h);}
     let cx=M;
-    const cells=r.hol?[fmtShort(r.date),'วันหยุด','','','','','','']:[fmtShort(r.date),r.area,r.pts,r.dist,r.fl,f(r.tl),r.bonus,f(r.tot)];
     cols.forEach((c,k)=>{
-      const t=fitText(g,cells[k],c[1]-16);
       g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';
-      if(k===7&&!r.hol)g.font='bold '+Math.round(rh*0.46)+'px '+FONT;
-      g.fillText(t,c[2]==='r'?cx+c[1]-10:c[2]==='c'?cx+c[1]/2:cx+10,y+rh/2);
-      if(k===7)g.font=Math.round(rh*0.46)+'px '+FONT;
+      g.fillStyle=r.hol?'#999':'#111';
+      g.font=(k===7&&!r.hol?'bold ':'')+fs+'px '+FONT;
+      const px=c[2]==='r'?cx+c[1]-10:c[2]==='c'?cx+c[1]/2:cx+10;
+      L.lines[k].forEach((ln,q)=>g.fillText(ln,px,y+8+layout.lh*q+layout.lh/2));
       cx+=c[1];
     });
-    y+=rh;
+    y+=L.h;
   });
   g.strokeStyle='#333';g.lineWidth=2;g.beginPath();g.moveTo(M,y);g.lineTo(PDF_W-M,y);g.stroke();
   // totals box (right)
@@ -1240,7 +1260,7 @@ async function summaryCanvas(start,end,sigData,title){
   g.fillStyle='#2d7d46';g.fillRect(bx-10,y,570,56);
   g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+28);y+=56;
   // signatures
-  const sy=Math.max(y+50,PDF_H-M-230);
+  const sy=Math.max(y+40,PDF_H-M-230);
   const sw=420;
   const boxes=[[M+20,'ลายเซ็นพนักงานขับรถ','('+(CFG.name||'................................')+')'],[PDF_W-M-20-sw,'ลายเซ็นผู้อนุมัติ','(................................)']];
   for(let k=0;k<2;k++){
@@ -1248,10 +1268,81 @@ async function summaryCanvas(start,end,sigData,title){
     if(k===0&&sigData){try{const im=await loadImg(sigData);const sc=Math.min(260/im.width,100/im.height);g.drawImage(im,sx+(sw-im.width*sc)/2,sy+110-im.height*sc,im.width*sc,im.height*sc);}catch(e){}}
     g.strokeStyle='#999';g.lineWidth=2;g.beginPath();g.moveTo(sx,sy+115);g.lineTo(sx+sw,sy+115);g.stroke();
     g.textAlign='center';g.fillStyle='#555';g.font='24px '+FONT;
-    g.fillText(lab,sx+sw/2,sy+140);g.fillText(nm,sx+sw/2,sy+172);
+    g.fillText(fitText(g,lab,sw),sx+sw/2,sy+140);g.fillText(fitText(g,nm,sw),sx+sw/2,sy+172);
     g.fillText(k===0?'วันที่ '+new Date().toLocaleDateString('th-TH'):'วันที่ ..../..../........',sx+sw/2,sy+204);
   }
   return cv;
+}
+/* ── Excel (.xlsx) แบบเขียนเอง ไม่พึ่งไลบรารี: zip แบบ store + XML ── */
+const CRC_T=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0;}
+function zipStore(files){
+  const enc=new TextEncoder();const chunks=[];let off=0;const cen=[];
+  const u16=(v,a)=>{a.push(v&255,(v>>8)&255)};const u32=(v,a)=>{a.push(v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255)};
+  files.forEach(f=>{
+    const name=enc.encode(f.name),data=typeof f.data==='string'?enc.encode(f.data):f.data,crc=crc32(data);
+    const h=[];u32(0x04034b50,h);u16(20,h);u16(0x0800,h);u16(0,h);u16(0,h);u16(0x21,h);u32(crc,h);u32(data.length,h);u32(data.length,h);u16(name.length,h);u16(0,h);
+    chunks.push(new Uint8Array(h),name,data);
+    const c=[];u32(0x02014b50,c);u16(20,c);u16(20,c);u16(0x0800,c);u16(0,c);u16(0,c);u16(0x21,c);u32(crc,c);u32(data.length,c);u32(data.length,c);u16(name.length,c);u16(0,c);u16(0,c);u16(0,c);u16(0,c);u32(0,c);u32(off,c);
+    cen.push(new Uint8Array(c),name);
+    off+=h.length+name.length+data.length;
+  });
+  let cs=0;cen.forEach(c=>{cs+=c.length;chunks.push(c);});
+  const e=[];u32(0x06054b50,e);u16(0,e);u16(0,e);u16(files.length,e);u16(files.length,e);u32(cs,e);u32(off,e);u16(0,e);
+  chunks.push(new Uint8Array(e));
+  return new Blob(chunks,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function xlCol(i){return String.fromCharCode(65+i);}
+function makeXlsx(rows,widths){
+  // rows: array of arrays; cell = value | {v,b:true}; numbers get #,##0
+  const x=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const sheetRows=rows.map((r,ri)=>'<row r="'+(ri+1)+'">'+r.map((c,ci)=>{
+    if(c===null||c===undefined||c==='')return'';
+    const bold=c&&typeof c==='object'&&c.b, v=c&&typeof c==='object'?c.v:c, ref=xlCol(ci)+(ri+1);
+    if(typeof v==='number')return'<c r="'+ref+'" s="'+(bold?3:2)+'"><v>'+v+'</v></c>';
+    return'<c r="'+ref+'" t="inlineStr"'+(bold?' s="1"':'')+'><is><t xml:space="preserve">'+x(v)+'</t></is></c>';
+  }).join('')+'</row>').join('');
+  const cols='<cols>'+widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
+  const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  return zipStore([
+    {name:'[Content_Types].xml',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'},
+    {name:'_rels/.rels',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+    {name:'xl/workbook.xml',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="'+NS+'" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="สรุปงาน" sheetId="1" r:id="rId1"/></sheets></workbook>'},
+    {name:'xl/_rels/workbook.xml.rels',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},
+    {name:'xl/styles.xml',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="'+NS+'"><fonts count="2"><font><sz val="11"/><name val="Tahoma"/></font><font><b/><sz val="11"/><name val="Tahoma"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="3" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/></cellXfs></styleSheet>'},
+    {name:'xl/worksheets/sheet1.xml',data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="'+NS+'">'+cols+'<sheetData>'+sheetRows+'</sheetData></worksheet>'}
+  ]);
+}
+function weekXlsx(start,end){
+  const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
+  const dn=['อา','จ','อ','พ','พฤ','ศ','ส'];
+  const B=v=>({v,b:true});
+  const head=['วันที่','วัน','เขต/อำเภอที่วิ่งงาน','จังหวัดที่วิ่งงาน','จำนวนจุดส่ง','ระยะกิโล','ชั้นที่ยกขึ้น/บ้าน','ค่าทางด่วน (บาท)','เหมาจ่าย (บาท)','ยกชั้น (บาท)','ต่างจังหวัด (บาท)','จุดที่ 7 ขึ้นไป (บาท)','รวมรายได้ (บาท)','ค่าเช่ารถ (บาท)','หมายเหตุ','สถานะ'].map(B);
+  const T={km:0,fl:0,tl:0,up:0,pt:0,tot:0,rent:0,pts:0,dist:0,days:0,hol:0};
+  const body=dels.map(d=>{
+    const day=dn[new Date(d.date+'T00:00:00').getDay()];
+    if(d.is_holiday){T.hol++;return[thDate(d.date),day,'','','','','','','','','','','','','','หยุด'];}
+    const inc=calcInc(d);
+    T.km+=inc.km;T.fl+=inc.fl;T.tl+=inc.tl;T.up+=inc.up;T.pt+=inc.pt;T.tot+=inc.tot;T.rent+=inc.rent;T.days++;
+    T.pts+=parseInt(d.point_count)||0;T.dist+=parseFloat(d.distance)||0;
+    const fl=(d.floor_deliveries||[]).filter(f=>f.floor>=3).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(', ')||'ไม่มี';
+    return[thDate(d.date),day,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,fl,inc.tl,inc.km,inc.fl,inc.up,inc.pt,inc.tot,inc.rent,d.notes||'','วิ่งงาน'];
+  });
+  const tax=parseFloat(CFG.tax||'1')/100,taxAmt=T.tot*tax;
+  const rows=[
+    [B('รายงานสรุปงานประจำสัปดาห์ '+thDate(start)+' – '+thDate(end))],
+    ['พนักงานขับรถ:',CFG.name||'','รถ/สาย:',CFG.truck||''],
+    [],head,...body,
+    [B('รวม'),'',B('วิ่ง '+T.days+' วัน'),B('หยุด '+T.hol+' วัน'),B(T.pts),B(T.dist),'',B(T.tl),B(T.km),B(T.fl),B(T.up),B(T.pt),B(T.tot),B(T.rent)],
+    [],
+    [B('สรุป')],
+    ['รวมรายได้',T.tot],['หักค่าเช่ารถ',T.rent],['หัก ณ ที่จ่าย '+(+(tax*100).toFixed(2))+'%',+taxAmt.toFixed(2)],[B('รับสุทธิ'),B(+(T.tot-T.rent-taxAmt).toFixed(2))]
+  ];
+  return makeXlsx(rows,[14,6,24,18,12,12,22,16,16,14,16,18,16,16,24,10]);
+}
+function downloadWeekXlsx(start,end){
+  downloadBlob(weekXlsx(start,end),`NITORI_ข้อมูลสัปดาห์_${start}_ถึง_${end}.xlsx`);
+  toast('📥 ดาวน์โหลดไฟล์ Excel แล้ว','ok');
 }
 function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
 /* หน้าบิลค่าทางด่วน: 4 รูป/หน้า (2x2) พร้อมวันที่กำกับ เรียงตามวันที่ */
@@ -1315,6 +1406,7 @@ ${driver} นำส่งแผนงานวันที่ ${thDate(start)} -
 รายละเอียดไฟล์แนบ:
 - PDF สรุปงานประจำสัปดาห์ (ตารางงานรายวัน)
 - ${nBills?'PDF บิลค่าทางด่วน '+nBills+' รูป เรียงตามวันที่':'ไม่มีบิลค่าทางด่วนแนบ'}
+- ไฟล์ Excel (.xlsx) ข้อมูลงานรายวันและสรุปยอด
 
 รายละเอียดงาน:
 ${lines}
@@ -1332,7 +1424,7 @@ let sending=false;
 function blobB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob);});}
 /* ส่งผ่าน Apps Script — คืน true เมื่อสคริปต์ยืนยันว่าส่งแล้ว */
 async function sendDirect(files,mail){
-  const enc=await Promise.all(files.map(async f=>({filename:f.name,pdf:await blobB64(f.blob)})));
+  const enc=await Promise.all(files.map(async f=>({filename:f.name,mime:f.blob.type||'application/pdf',pdf:await blobB64(f.blob)})));
   const payload={token:CFG.mailToken||'',subject:mail.subject,body:mail.body,filename:enc[0].filename,pdf:enc[0].pdf,files:enc};
   let r;
   try{r=await fetch(CFG.mailUrl,{method:'POST',body:JSON.stringify(payload)});}
@@ -1341,7 +1433,7 @@ async function sendDirect(files,mail){
   if(j&&j.ok){
     if(j.n!==undefined&&j.n<files.length){toast('ส่งแล้วแต่แนบไม่ครบ ('+j.n+'/'+files.length+' ไฟล์) — อัปเดตสคริปต์ Apps Script','err');return true;}
     if(j.n===undefined&&files.length>1){toast('ส่งแล้วแต่แนบเฉพาะไฟล์แรก — อัปเดตสคริปต์ Apps Script ให้เป็นรุ่นล่าสุด','err');return true;}
-    toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว ('+files.length+' ไฟล์'+(files.length<2?' — ไม่พบรูปบิลในสัปดาห์นี้ จึงไม่มี PDF บิล':': สรุป + บิลทางด่วน')+')',files.length<2?'err':'ok');return true;
+    toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว ('+files.length+' ไฟล์'+(files.length<3?' — ไม่พบรูปบิลในสัปดาห์นี้ จึงไม่มี PDF บิล':': PDF สรุป + PDF บิลทางด่วน + Excel')+')',files.length<3?'err':'ok');return true;
   }
   if(j){toast('ส่งไม่สำเร็จ: '+(j.error==='token'?'รหัสลับไม่ตรงกับในสคริปต์':j.error),'err');return false;}
   toast('ส่งคำขอแล้ว แต่ยืนยันผลไม่ได้ — ตรวจกล่องจดหมายส่งออกใน Gmail','ok');return true;
@@ -1353,7 +1445,7 @@ function downloadBlob(blob,name){
 }
 /* ส่งมอบไฟล์: เมนูแชร์ (มือถือ) หรือดาวน์โหลด (+เปิดโปรแกรมอีเมล์ถ้ามี mail) — คืน true เมื่อทำต่อได้ */
 async function deliverPDF(files,mail){
-  const fl=files.map(f=>new File([f.blob],f.name,{type:'application/pdf'}));
+  const fl=files.map(f=>new File([f.blob],f.name,{type:f.blob.type||'application/pdf'}));
   if(navigator.canShare&&navigator.canShare({files:fl})){
     try{
       await navigator.share(mail?{files:fl,title:mail.subject,text:mail.body}:{files:fl,title:fl[0].name});
@@ -1389,6 +1481,7 @@ async function weeklyPDF(start,end,sigData,send){
     const files=[{name:`NITORI_สรุปงานสัปดาห์_${start}_ถึง_${end}.pdf`,blob:makePDF([await summaryCanvas(start,end,sigData,'สรุปงานประจำสัปดาห์')])}];
     const items=weekBills(start,end);
     if(items.length)files.push({name:`NITORI_บิลทางด่วน_${start}_ถึง_${end}.pdf`,blob:makePDF(await billPages(start,end,items))});
+    files.push({name:`NITORI_ข้อมูลสัปดาห์_${start}_ถึง_${end}.xlsx`,blob:weekXlsx(start,end)});
     const mail=send?weekMail(start,end,items.length):null;
     let ok;
     if(direct)ok=await sendDirect(files,mail);

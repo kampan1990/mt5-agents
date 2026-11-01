@@ -17,7 +17,7 @@ function doPost(e) {
     if (d.token !== TOKEN) return out({ ok: false, error: 'token' });
     const list = Array.isArray(d.files) && d.files.length ? d.files : [{ filename: d.filename, pdf: d.pdf }];
     const attachments = list.map(function (f) {
-      return Utilities.newBlob(Utilities.base64Decode(f.pdf), 'application/pdf', f.filename);
+      return Utilities.newBlob(Utilities.base64Decode(f.pdf), f.mime || 'application/pdf', f.filename);
     });
     MailApp.sendEmail({ to: BOSS, subject: d.subject, body: d.body, attachments: attachments });
     return out({ ok: true, n: attachments.length });
