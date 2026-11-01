@@ -93,6 +93,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     <h1>📦 รายงานส่งงาน</h1>
     <div class="sub" id="hdate"></div>
   </div>
+  <div id="wkbanner"></div>
   <div class="card" style="margin-top:16px">
     <div class="ct">สรุปวันนี้</div>
     <div id="today-sum" style="padding:0 16px 8px"></div>
@@ -311,8 +312,6 @@ input:checked+.tgt:before{transform:translateX(20px)}
 <div id="toast"></div>
 <div class="ov" id="modal"><div class="mo"><div class="mh"></div><div id="mc"></div></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 /* ── Data Layer (localStorage) ── */
 const DB = {
@@ -430,6 +429,7 @@ function fmtShort(ds){const d=new Date(ds+'T00:00:00');return`${String(d.getDate
 
 /* ── Home ── */
 function loadHome(){
+  renderWkBanner();
   const today=todayStr();
   document.getElementById('hdate').textContent=fmtTH(today);
   const dels=DB.getDeliveries();
@@ -805,7 +805,7 @@ function loadWeek(){
   const end=document.getElementById('wdate').value;if(!end)return;
   const[start]=weekRange(end);
   const dow=new Date(end+'T00:00:00').getDay();
-  document.getElementById('wrange').innerHTML=`สัปดาห์ ${thDate(start)} – ${thDate(end)} (เสาร์–ศุกร์)${dow!==5?' <b style="color:var(--r)">· วันที่เลือกไม่ใช่วันศุกร์</b>':''}`;
+  document.getElementById('wrange').innerHTML=`สัปดาห์ ${thDate(start)} – ${thDate(end)} (เสาร์–ศุกร์)${weekSent(end)?' <b style="color:var(--g)">· ✅ ส่งแล้ว</b>':''}${dow!==5?' <b style="color:var(--r)">· วันที่เลือกไม่ใช่วันศุกร์</b>':''}`;
   loadSum(start,end,'wka',true);
 }
 
@@ -847,8 +847,8 @@ function loadSum(start0,end0,areaId,weekly){
       <div class="inet" style="margin:12px 16px 16px"><span>รับสุทธิ</span><span>${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
     </div>
     ${weekly?`<div style="padding:0 16px 16px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-p" style="flex:1 1 100%" onclick="showSigModal('${start}','${end}','wk-send')">📧 สร้าง PDF + ส่งหัวหน้า</button>
-      <button class="btn btn-g btn-sm" onclick="showSigModal('${start}','${end}','wk-save')">📄 บันทึก PDF</button>
+      <button class="btn btn-p" style="flex:1 1 100%" onclick="showSigModal('${start}','${end}','wk-send')">📧 ส่งหัวหน้า (PDF สรุป + PDF บิลทางด่วน)</button>
+      <button class="btn btn-g btn-sm" onclick="showSigModal('${start}','${end}','wk-save')">📄 บันทึก PDF 2 ไฟล์</button>
       <button class="btn btn-w btn-sm" onclick="exportExcel('range','${start}','${end}')">📊 CSV (Excel)</button>
       <button class="btn btn-o btn-sm" onclick="shareSum('${start}','${end}')">📤 LINE</button>
     </div>`:`<div style="padding:0 16px 16px;display:flex;gap:8px">
@@ -1131,30 +1131,131 @@ function buildPDF(start,end,sigData){
   if(!w){toast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์','err');return;}
   w.document.write(pdfHTML(start,end,sigData,false));w.document.close();
 }
-/* ── PDF โดยตรง: หน้าสรุป A4 + (สัปดาห์) หน้าบิลค่าทางด่วนเรียงวันที่ ── */
-function needLibs(){
-  if(!window.html2canvas||!window.jspdf){toast('โหลดตัวสร้าง PDF ไม่ได้ (ต้องต่ออินเทอร์เน็ต)','err');return false;}
-  return true;
+/* ── PDF โดยตรง (ไม่พึ่งไลบรารีภายนอก): วาดหน้าลง canvas แล้วเขียนไฟล์ PDF เอง ── */
+const PDF_W=1240,PDF_H=1754;                    // A4 ที่ 150 dpi
+const FONT='Sarabun,Tahoma,"Noto Sans Thai",sans-serif';
+
+function makePDF(canvases){
+  const enc=new TextEncoder();
+  const parts=[];let len=0;const offs=[];
+  const push=b=>{const u=typeof b==='string'?enc.encode(b):b;parts.push(u);len+=u.length;};
+  const n=canvases.length;
+  push('%PDF-1.4\n');
+  const obj=(id,fn)=>{offs[id]=len;push(id+' 0 obj\n');fn();push('\nendobj\n');};
+  obj(1,()=>push('<</Type/Catalog/Pages 2 0 R>>'));
+  obj(2,()=>push('<</Type/Pages/Kids['+canvases.map((_,k)=>(3+3*k)+' 0 R').join(' ')+']/Count '+n+'>>'));
+  canvases.forEach((cv,k)=>{
+    const b64=cv.toDataURL('image/jpeg',0.9).split(',')[1];
+    const bin=atob(b64);const jpg=new Uint8Array(bin.length);
+    for(let q=0;q<bin.length;q++)jpg[q]=bin.charCodeAt(q);
+    const pg=3+3*k,ct=4+3*k,im=5+3*k;
+    obj(pg,()=>push('<</Type/Page/Parent 2 0 R/MediaBox[0 0 595.28 841.89]/Resources<</XObject<</Im0 '+im+' 0 R>>>>/Contents '+ct+' 0 R>>'));
+    const c='q 595.28 0 0 841.89 0 0 cm /Im0 Do Q';
+    obj(ct,()=>push('<</Length '+c.length+'>>\nstream\n'+c+'\nendstream'));
+    obj(im,()=>{push('<</Type/XObject/Subtype/Image/Width '+cv.width+'/Height '+cv.height+'/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length '+jpg.length+'>>\nstream\n');push(jpg);push('\nendstream');});
+  });
+  const total=3+3*n;
+  const xr=len;
+  let x='xref\n0 '+total+'\n0000000000 65535 f \n';
+  for(let id=1;id<total;id++)x+=String(offs[id]).padStart(10,'0')+' 00000 n \n';
+  push(x+'trailer\n<</Size '+total+'/Root 1 0 R>>\nstartxref\n'+xr+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
+}
+function fitText(g,t,maxW){
+  t=String(t==null?'':t);
+  if(g.measureText(t).width<=maxW)return t;
+  while(t.length>1&&g.measureText(t+'…').width>maxW)t=t.slice(0,-1);
+  return t+'…';
 }
 async function summaryCanvas(start,end,sigData,title){
-  const fr=document.createElement('iframe');
-  fr.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1200px;border:0;background:#fff';
-  document.body.appendChild(fr);
-  try{
-    await new Promise(res=>{fr.onload=res;fr.srcdoc=pdfHTML(start,end,sigData,true,title);});
-    const doc=fr.contentDocument;
-    try{await doc.fonts.ready;}catch(e){}
-    const pg=doc.getElementById('pg');
-    pg.style.width='718px';pg.style.padding='0';
-    doc.body.style.width='718px';
-    fr.style.height=(pg.offsetHeight+40)+'px';
-    return await html2canvas(pg,{scale:2,backgroundColor:'#ffffff',windowWidth:794});
-  }finally{fr.remove();}
+  const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;
+  const g=cv.getContext('2d');
+  g.fillStyle='#fff';g.fillRect(0,0,PDF_W,PDF_H);g.textBaseline='middle';
+  const M=60,TW=PDF_W-2*M;
+  const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
+  const tax=parseFloat(CFG.tax||'1')/100;
+  const driver=CFG.name||'................................';
+  const f=(n)=>n.toLocaleString();
+  const T={km:0,fl:0,tl:0,up:0,pt:0,rent:0,days:0,hol:0,dist:0,pts:0};
+  const rows=dels.map(d=>{
+    if(d.is_holiday){T.hol++;return{date:d.date,hol:true};}
+    const inc=calcInc(d);
+    T.km+=inc.km;T.fl+=inc.fl;T.tl+=inc.tl;T.up+=inc.up;T.pt+=inc.pt;T.rent+=inc.rent;T.days++;
+    T.dist+=parseFloat(d.distance)||0;T.pts+=parseInt(d.point_count)||0;
+    const bonus=[inc.up?'ตจว. +'+inc.up:'',inc.pt?'จุด'+PT7_MIN+'+ +'+inc.pt:''].filter(Boolean).join('  ');
+    return{date:d.date,area:(d.zone||'-')+(d.province?' / '+d.province:''),pts:d.point_count||0,dist:d.distance||0,
+      fl:(d.floor_deliveries||[]).map(x=>`ชั้น${x.floor}×${x.count||1}`).join(',')||'-',tl:inc.tl,bonus,tot:inc.tot,rent:inc.rent};
+  });
+  const totInc=T.km+T.fl+T.tl+T.up+T.pt, taxAmt=totInc*tax, net=totInc-T.rent-taxAmt;
+  // header
+  g.fillStyle='#111';g.font='bold 48px '+FONT;g.textAlign='center';
+  g.fillText(title||'สรุปรายได้ประจำงวด',PDF_W/2,80);
+  g.font='28px '+FONT;g.fillStyle='#555';
+  g.fillText(`บริษัท NITORI · วันที่ ${thDate(start)} ถึง ${thDate(end)}`,PDF_W/2,130);
+  g.textAlign='left';g.fillStyle='#111';g.font='28px '+FONT;
+  g.fillText(`พนักงานขับรถ: ${driver}${CFG.truck?'   ('+CFG.truck+')':''}`,M,185);
+  g.textAlign='right';g.fillText(`วันวิ่ง ${T.days} วัน · หยุด ${T.hol} วัน · ${f(T.dist)} กม. · ${T.pts} จุด`,PDF_W-M,185);
+  // table
+  const cols=[['วันที่',120,'l'],['เขต / จังหวัด',260,'l'],['จุด',70,'c'],['กม.',80,'c'],['ยกชั้น',130,'c'],['ทางด่วน',110,'r'],['โบนัส',210,'l'],['รายได้',140,'r']];
+  let y=225;const hh=52;
+  g.fillStyle='#1a1a2e';g.fillRect(M,y,TW,hh);
+  g.fillStyle='#fff';g.font='bold 24px '+FONT;
+  let x=M;
+  cols.forEach(c=>{g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';g.fillText(c[0],c[2]==='r'?x+c[1]-10:c[2]==='c'?x+c[1]/2:x+10,y+hh/2);x+=c[1];});
+  y+=hh;
+  const bottomLimit=PDF_H-M-600;
+  const rh=Math.max(26,Math.min(56,(bottomLimit-y)/Math.max(1,rows.length)));
+  g.font=Math.round(rh*0.46)+'px '+FONT;
+  rows.forEach((r,i)=>{
+    if(i%2){g.fillStyle='#f4f5f8';g.fillRect(M,y,TW,rh);}
+    g.fillStyle=r.hol?'#999':'#111';
+    let cx=M;
+    const cells=r.hol?[fmtShort(r.date),'วันหยุด','','','','','','']:[fmtShort(r.date),r.area,r.pts,r.dist,r.fl,f(r.tl),r.bonus,f(r.tot)];
+    cols.forEach((c,k)=>{
+      const t=fitText(g,cells[k],c[1]-16);
+      g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';
+      if(k===7&&!r.hol)g.font='bold '+Math.round(rh*0.46)+'px '+FONT;
+      g.fillText(t,c[2]==='r'?cx+c[1]-10:c[2]==='c'?cx+c[1]/2:cx+10,y+rh/2);
+      if(k===7)g.font=Math.round(rh*0.46)+'px '+FONT;
+      cx+=c[1];
+    });
+    y+=rh;
+  });
+  g.strokeStyle='#333';g.lineWidth=2;g.beginPath();g.moveTo(M,y);g.lineTo(PDF_W-M,y);g.stroke();
+  // totals box (right)
+  y+=30;
+  const bx=PDF_W-M-560;
+  const lines=[['เหมาจ่ายระยะทาง',f(T.km)+' ฿'],['ยกของขึ้นชั้น',f(T.fl)+' ฿']];
+  if(T.up)lines.push(['ต่างจังหวัด',f(T.up)+' ฿']);
+  if(T.pt)lines.push(['จุดที่ '+PT7_MIN+' ขึ้นไป',f(T.pt)+' ฿']);
+  lines.push(['ค่าทางด่วนรวม',f(T.tl)+' ฿']);
+  g.font='28px '+FONT;
+  lines.forEach(l=>{g.textAlign='left';g.fillStyle='#444';g.fillText(l[0],bx,y+18);g.textAlign='right';g.fillStyle='#111';g.fillText(l[1],PDF_W-M,y+18);y+=40;});
+  g.fillStyle='#1a1a2e';g.fillRect(bx-10,y,570,52);
+  g.fillStyle='#fff';g.font='bold 30px '+FONT;g.textAlign='left';g.fillText('รวมรายได้',bx,y+26);g.textAlign='right';g.fillText(f(totInc)+' ฿',PDF_W-M,y+26);y+=64;
+  g.font='28px '+FONT;g.fillStyle='#c0392b';
+  if(T.rent){g.textAlign='left';g.fillText('หัก ค่าเช่ารถ',bx,y+18);g.textAlign='right';g.fillText('- '+f(T.rent)+' ฿',PDF_W-M,y+18);y+=40;}
+  g.textAlign='left';g.fillText(`หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%`,bx,y+18);g.textAlign='right';g.fillText('- '+taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+18);y+=50;
+  g.fillStyle='#2d7d46';g.fillRect(bx-10,y,570,56);
+  g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+28);y+=56;
+  // signatures
+  const sy=Math.max(y+50,PDF_H-M-230);
+  const sw=420;
+  const boxes=[[M+20,'ลายเซ็นพนักงานขับรถ','('+(CFG.name||'................................')+')'],[PDF_W-M-20-sw,'ลายเซ็นผู้อนุมัติ','(................................)']];
+  for(let k=0;k<2;k++){
+    const [sx,lab,nm]=boxes[k];
+    if(k===0&&sigData){try{const im=await loadImg(sigData);const sc=Math.min(260/im.width,100/im.height);g.drawImage(im,sx+(sw-im.width*sc)/2,sy+110-im.height*sc,im.width*sc,im.height*sc);}catch(e){}}
+    g.strokeStyle='#999';g.lineWidth=2;g.beginPath();g.moveTo(sx,sy+115);g.lineTo(sx+sw,sy+115);g.stroke();
+    g.textAlign='center';g.fillStyle='#555';g.font='24px '+FONT;
+    g.fillText(lab,sx+sw/2,sy+140);g.fillText(nm,sx+sw/2,sy+172);
+    g.fillText(k===0?'วันที่ '+new Date().toLocaleDateString('th-TH'):'วันที่ ..../..../........',sx+sw/2,sy+204);
+  }
+  return cv;
 }
 function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
 /* หน้าบิลค่าทางด่วน: 4 รูป/หน้า (2x2) พร้อมวันที่กำกับ เรียงตามวันที่ */
 async function billPages(start,end,items){
-  const W=1240,H=1754,M=60,GAP=40,HEAD=110;
+  const W=PDF_W,H=PDF_H,M=60,GAP=40,HEAD=110;
   const cw=(W-2*M-GAP)/2, ch=(H-HEAD-M-GAP)/2;
   const driver=CFG.name||'';
   const pages=[];
@@ -1163,15 +1264,15 @@ async function billPages(start,end,items){
     const cv=document.createElement('canvas');cv.width=W;cv.height=H;
     const g=cv.getContext('2d');
     g.fillStyle='#fff';g.fillRect(0,0,W,H);
-    g.fillStyle='#111';g.font='bold 38px Sarabun,Tahoma,"Noto Sans Thai",sans-serif';g.textBaseline='top';
-    g.fillText(`🧾 บิลค่าทางด่วน ${driver?'· '+driver:''}`,M,40);
-    g.font='28px Sarabun,Tahoma,"Noto Sans Thai",sans-serif';g.fillStyle='#555';
+    g.fillStyle='#111';g.font='bold 38px '+FONT;g.textBaseline='top';g.textAlign='left';
+    g.fillText(`บิลค่าทางด่วน ${driver?'· '+driver:''}`,M,40);
+    g.font='28px '+FONT;g.fillStyle='#555';
     g.fillText(`สัปดาห์ ${thDate(start)} – ${thDate(end)}   หน้า ${p+1}/${total}`,M,88);
     for(let k=0;k<4;k++){
       const it=items[p*4+k];if(!it)break;
       const x=M+(k%2)*(cw+GAP), y=HEAD+M/2+Math.floor(k/2)*(ch+GAP);
       g.strokeStyle='#ccc';g.lineWidth=2;g.strokeRect(x,y,cw,ch);
-      g.fillStyle='#111';g.font='bold 30px Sarabun,Tahoma,"Noto Sans Thai",sans-serif';
+      g.fillStyle='#111';g.font='bold 30px '+FONT;
       g.fillText(`${thDate(it.date)} · บิลที่ ${it.n}/${it.of}`,x+14,y+10);
       try{
         const im=await loadImg(it.src);
@@ -1179,7 +1280,7 @@ async function billPages(start,end,items){
         const sc=Math.min(bw/im.width,bh/im.height);
         const w=im.width*sc,h=im.height*sc;
         g.drawImage(im,bx+(bw-w)/2,by+(bh-h)/2,w,h);
-      }catch(e){g.fillStyle='#c0392b';g.font='26px sans-serif';g.fillText('(เปิดรูปไม่ได้)',x+14,y+70);}
+      }catch(e){g.fillStyle='#c0392b';g.font='26px '+FONT;g.fillText('(เปิดรูปไม่ได้)',x+14,y+70);}
     }
     pages.push(cv);
   }
@@ -1211,7 +1312,8 @@ function weekMail(start,end,nBills){
 ${driver} นำส่งแผนงานวันที่ ${thDate(start)} - ${thDate(end)}
 
 รายละเอียดไฟล์แนบ:
-- ไฟล์ PDF 1 ไฟล์ ประกอบด้วยตารางสรุปงานรายวันและรูปบิลค่าทางด่วน ${nBills} รูป เรียงตามวันที่
+- PDF สรุปงานประจำสัปดาห์ (ตารางงานรายวัน)
+- ${nBills?'PDF บิลค่าทางด่วน '+nBills+' รูป เรียงตามวันที่':'ไม่มีบิลค่าทางด่วนแนบ'}
 
 รายละเอียดงาน:
 ${lines}
@@ -1226,84 +1328,101 @@ ${driver}`;
   return{subject,body};
 }
 let sending=false;
-async function sendDirect(blob,name,mail){
-  const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob);});
-  const payload={token:CFG.mailToken||'',subject:mail.subject,body:mail.body,filename:name,pdf:b64};
+function blobB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob);});}
+/* ส่งผ่าน Apps Script — คืน true เมื่อสคริปต์ยืนยันว่าส่งแล้ว */
+async function sendDirect(files,mail){
+  const enc=await Promise.all(files.map(async f=>({filename:f.name,pdf:await blobB64(f.blob)})));
+  const payload={token:CFG.mailToken||'',subject:mail.subject,body:mail.body,filename:enc[0].filename,pdf:enc[0].pdf,files:enc};
   let r;
   try{r=await fetch(CFG.mailUrl,{method:'POST',body:JSON.stringify(payload)});}
-  catch(e){toast('ส่งอัตโนมัติไม่สำเร็จ (เน็ตหรือลิงก์ผิด) — ใช้วิธีแชร์แทน','err');await deliverPDF(blob,name,mail);return;}
+  catch(e){toast('ส่งอัตโนมัติไม่สำเร็จ (เน็ตหรือลิงก์ผิด) — ใช้วิธีแชร์แทน','err');return await deliverPDF(files,mail);}
   let j=null;try{j=await r.json();}catch(e){}
-  if(j&&j.ok)toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว','ok');
-  else if(j){toast('ส่งไม่สำเร็จ: '+(j.error==='token'?'รหัสลับไม่ตรงกับในสคริปต์':j.error),'err');}
-  else toast('ส่งคำขอแล้ว แต่ยืนยันผลไม่ได้ — ตรวจกล่องจดหมายส่งออกใน Gmail','ok');
-}
-async function deliverPDF(blob,name,mail){
-  const file=new File([blob],name,{type:'application/pdf'});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{
-      await navigator.share(mail?{files:[file],title:mail.subject,text:mail.body}:{files:[file],title:name});
-      toast('✅ เปิดเมนูแชร์แล้ว','ok');return;
-    }catch(e){if(e&&e.name==='AbortError')return;}
+  if(j&&j.ok){
+    if(j.n!==undefined&&j.n<files.length){toast('ส่งแล้วแต่แนบไม่ครบ ('+j.n+'/'+files.length+' ไฟล์) — อัปเดตสคริปต์ Apps Script','err');return true;}
+    if(j.n===undefined&&files.length>1){toast('ส่งแล้วแต่แนบเฉพาะไฟล์แรก — อัปเดตสคริปต์ Apps Script ให้เป็นรุ่นล่าสุด','err');return true;}
+    toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว ('+files.length+' ไฟล์)','ok');return true;
   }
+  if(j){toast('ส่งไม่สำเร็จ: '+(j.error==='token'?'รหัสลับไม่ตรงกับในสคริปต์':j.error),'err');return false;}
+  toast('ส่งคำขอแล้ว แต่ยืนยันผลไม่ได้ — ตรวจกล่องจดหมายส่งออกใน Gmail','ok');return true;
+}
+function downloadBlob(blob,name){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+/* ส่งมอบไฟล์: เมนูแชร์ (มือถือ) หรือดาวน์โหลด (+เปิดโปรแกรมอีเมล์ถ้ามี mail) — คืน true เมื่อทำต่อได้ */
+async function deliverPDF(files,mail){
+  const fl=files.map(f=>new File([f.blob],f.name,{type:'application/pdf'}));
+  if(navigator.canShare&&navigator.canShare({files:fl})){
+    try{
+      await navigator.share(mail?{files:fl,title:mail.subject,text:mail.body}:{files:fl,title:fl[0].name});
+      toast('✅ เปิดเมนูแชร์แล้ว','ok');return true;
+    }catch(e){if(e&&e.name==='AbortError')return false;}
+  }
+  for(let i=0;i<files.length;i++){downloadBlob(files[i].blob,files[i].name);await new Promise(r=>setTimeout(r,500));}
   if(mail){
     const boss=(CFG.boss||'').trim();
     toast('✅ ดาวน์โหลด PDF แล้ว — แนบไฟล์ในอีเมล์ที่เปิดขึ้น','ok');
     setTimeout(()=>{window.location.href=`mailto:${boss}?subject=${encodeURIComponent(mail.subject)}&body=${encodeURIComponent(mail.body)}`;},900);
-  } else toast('✅ ดาวน์โหลด PDF แล้ว','ok');
+  } else toast('✅ ดาวน์โหลด PDF แล้ว ('+files.length+' ไฟล์)','ok');
+  return true;
 }
-function addCanvasPage(pdf,cv,first,fit){
-  if(!first)pdf.addPage();
-  const data=cv.toDataURL('image/jpeg',0.9);
-  if(fit){
-    let w=190,h=cv.height/cv.width*190;
-    if(h>277){h=277;w=h*cv.width/cv.height;}
-    pdf.addImage(data,'JPEG',(210-w)/2,10,w,h);
-  } else pdf.addImage(data,'JPEG',0,0,210,297);
-}
+function markSent(end){try{localStorage.setItem('nitori_sent',end)}catch(e){}}
 /* สรุปช่วงวันที่: A4 หน้าเดียว */
 async function savePDF(start,end,sigData){
-  if(!needLibs())return;
   toast('⏳ กำลังสร้าง PDF...');
   try{
     const cv=await summaryCanvas(start,end,sigData);
-    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
-    addCanvasPage(pdf,cv,true,true);
-    await deliverPDF(pdf.output('blob'),`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`,null);
-  }catch(err){toast('สร้าง PDF ไม่สำเร็จ — ใช้ปุ่มพิมพ์แทน','err');}
+    await deliverPDF([{name:`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`,blob:makePDF([cv])}],null);
+  }catch(err){console.error(err);toast('สร้าง PDF ไม่สำเร็จ — ใช้ปุ่มพิมพ์แทน','err');}
 }
-/* รายสัปดาห์: หน้าแรกตารางสรุป + หน้าถัดไปบิลค่าทางด่วนเรียงวันที่ รวมไฟล์เดียว */
+/* รายสัปดาห์: PDF สรุป 1 ไฟล์ + PDF บิลค่าทางด่วน 1 ไฟล์ (เรียงวันที่) */
 async function weeklyPDF(start,end,sigData,send){
-  if(!needLibs())return;
   const boss=(CFG.boss||'').trim();
   const direct=send&&!!CFG.mailUrl;
   if(send&&!direct&&!boss){toast('กรุณาตั้งอีเมล์หัวหน้าในหน้าตั้งค่าก่อน','err');return;}
   if(sending)return;
   sending=true;
-  toast(direct?'⏳ กำลังสร้างและส่งอีเมล์...':'⏳ กำลังรวมไฟล์ PDF...');
+  toast(direct?'⏳ กำลังสร้างและส่งอีเมล์...':'⏳ กำลังสร้างไฟล์ PDF...');
   try{
-    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
-    const cv=await summaryCanvas(start,end,sigData,'สรุปงานประจำสัปดาห์');
-    addCanvasPage(pdf,cv,true,true);
+    const files=[{name:`NITORI_สรุปงานสัปดาห์_${start}_ถึง_${end}.pdf`,blob:makePDF([await summaryCanvas(start,end,sigData,'สรุปงานประจำสัปดาห์')])}];
     const items=weekBills(start,end);
-    if(items.length){
-      const pages=await billPages(start,end,items);
-      pages.forEach(pc=>addCanvasPage(pdf,pc,false,false));
-    }
-    const name=`NITORI_สรุปงานสัปดาห์_${start}_ถึง_${end}.pdf`;
-    const blob=pdf.output('blob');
+    if(items.length)files.push({name:`NITORI_บิลทางด่วน_${start}_ถึง_${end}.pdf`,blob:makePDF(await billPages(start,end,items))});
     const mail=send?weekMail(start,end,items.length):null;
-    if(direct)await sendDirect(blob,name,mail);
-    else await deliverPDF(blob,name,mail);
-  }catch(err){toast('สร้าง PDF ไม่สำเร็จ','err');}
+    let ok;
+    if(direct)ok=await sendDirect(files,mail);
+    else ok=await deliverPDF(files,mail);
+    if(send&&ok){markSent(end);loadHome();if(document.getElementById('wdate'))loadWeek();}
+  }catch(err){console.error(err);toast('สร้าง PDF ไม่สำเร็จ','err');}
   finally{sending=false;}
 }
 function doPDF(start,end,kind,sig){
   if(kind==='wk-send')weeklyPDF(start,end,sig,true);
   else if(kind==='wk-save')weeklyPDF(start,end,sig,false);
   else savePDF(start,end,sig);
+}
+
+/* ── แจ้งเตือนรอบส่งงานประจำสัปดาห์ (ทุกวันศุกร์) ── */
+function lastFriday(){
+  const t=new Date();const back=(t.getDay()+2)%7;t.setDate(t.getDate()-back);return dStr(t);
+}
+function weekSent(end){try{return(localStorage.getItem('nitori_sent')||'')>=end}catch(e){return false}}
+function weeklyDue(){
+  const end=lastFriday();const[start]=weekRange(end);
+  if(weekSent(end))return null;
+  const has=DB.getDeliveries().some(d=>d.date>=start&&d.date<=end&&!d.is_holiday);
+  return has?{start,end}:null;
+}
+function renderWkBanner(){
+  const el=document.getElementById('wkbanner');if(!el)return;
+  const w=weeklyDue();
+  if(!w){el.innerHTML='';return;}
+  const isFri=new Date().getDay()===5;
+  el.innerHTML=`<div class="card" style="margin:16px 16px 0;border-left:4px solid #e67e22"><div style="padding:14px 16px">
+    <div style="font-weight:700;margin-bottom:4px">${isFri?'📌 วันนี้วันศุกร์ ถึงรอบส่งงานประจำสัปดาห์':'⏰ ยังไม่ได้ส่งงานประจำสัปดาห์'}</div>
+    <div class="mu" style="font-size:13px;margin-bottom:10px">รอบ ${thDate(w.start)} – ${thDate(w.end)}</div>
+    <button class="btn btn-p btn-sm" onclick="showSigModal('${w.start}','${w.end}','wk-send')">📧 ส่งให้หัวหน้าเลย</button>
+  </div></div>`;
 }
 
 function copyAndShare(txt){
