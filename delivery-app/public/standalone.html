@@ -298,7 +298,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v1.0 · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.5 (1 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -846,7 +846,8 @@ function loadSum(start0,end0,areaId,weekly){
       <div class="ir" style="color:var(--r)"><span class="lbl">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</span><span class="val">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
       <div class="inet" style="margin:12px 16px 16px"><span>รับสุทธิ</span><span>${net.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
     </div>
-    ${weekly?`<div style="padding:0 16px 16px;display:flex;gap:8px;flex-wrap:wrap">
+    ${weekly?`<div class="mu" style="padding:0 16px 10px;font-size:13px">🧾 รูปบิลทางด่วนในสัปดาห์นี้ <b>${weekBills(start,end).length}</b> รูป — ${weekBills(start,end).length?'จะรวมเป็น PDF บิลแยก 1 ไฟล์ แนบไปกับ PDF สรุป':'ไม่มีรูป จึงไม่มี PDF บิล (เพิ่มรูปที่หน้า บันทึก → รูปบิลค่าทางด่วน)'}</div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-p" style="flex:1 1 100%" onclick="showSigModal('${start}','${end}','wk-send')">📧 ส่งหัวหน้า (PDF สรุป + PDF บิลทางด่วน)</button>
       <button class="btn btn-g btn-sm" onclick="showSigModal('${start}','${end}','wk-save')">📄 บันทึก PDF 2 ไฟล์</button>
       <button class="btn btn-w btn-sm" onclick="exportExcel('range','${start}','${end}')">📊 CSV (Excel)</button>
@@ -1340,7 +1341,7 @@ async function sendDirect(files,mail){
   if(j&&j.ok){
     if(j.n!==undefined&&j.n<files.length){toast('ส่งแล้วแต่แนบไม่ครบ ('+j.n+'/'+files.length+' ไฟล์) — อัปเดตสคริปต์ Apps Script','err');return true;}
     if(j.n===undefined&&files.length>1){toast('ส่งแล้วแต่แนบเฉพาะไฟล์แรก — อัปเดตสคริปต์ Apps Script ให้เป็นรุ่นล่าสุด','err');return true;}
-    toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว ('+files.length+' ไฟล์)','ok');return true;
+    toast('✅ ส่งอีเมล์ให้หัวหน้าแล้ว ('+files.length+' ไฟล์'+(files.length<2?' — ไม่พบรูปบิลในสัปดาห์นี้ จึงไม่มี PDF บิล':': สรุป + บิลทางด่วน')+')',files.length<2?'err':'ok');return true;
   }
   if(j){toast('ส่งไม่สำเร็จ: '+(j.error==='token'?'รหัสลับไม่ตรงกับในสคริปต์':j.error),'err');return false;}
   toast('ส่งคำขอแล้ว แต่ยืนยันผลไม่ได้ — ตรวจกล่องจดหมายส่งออกใน Gmail','ok');return true;
