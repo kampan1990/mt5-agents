@@ -298,7 +298,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.9 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.0 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -1182,6 +1182,19 @@ function fitText(g,t,maxW){
   while(t.length>1&&g.measureText(t+'…').width>maxW)t=t.slice(0,-1);
   return t+'…';
 }
+/* Safari บน iPhone วาดข้อความไทยที่ตั้ง textAlign เป็น right/center ผิดตำแหน่ง → จัดชิดเองด้วย measureText แล้ววาดจากซ้ายเสมอ */
+function safeAlign(g){
+  const nf=g.fillText.bind(g);
+  g.fillText=(t,x,y)=>{
+    const al=g.textAlign;
+    if(al==='left'||al==='start'){nf(t,x,y);return;}
+    const w=g.measureText(String(t)).width;
+    g.textAlign='left';
+    nf(t,(al==='right'||al==='end')?x-w:x-w/2,y);
+    g.textAlign=al;
+  };
+  return g;
+}
 function wrapLines(g,text,maxW){
   text=String(text==null?'':text);
   if(!text)return[''];
@@ -1214,7 +1227,7 @@ async function summaryCanvas(start,end,sigData,title){
   const hh=52,SIGH=230;
   const baseLines=2+(T.up?1:0)+(T.pt?1:0)+1;
   const totalsH=30+baseLines*40+64+(T.rent?40:0)+50+56;
-  const newPage=()=>{const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,PDF_W,PDF_H);g.textBaseline='middle';return{cv,g};};
+  const newPage=()=>{const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;const g=safeAlign(cv.getContext('2d'));g.fillStyle='#fff';g.fillRect(0,0,PDF_W,PDF_H);g.textBaseline='middle';return{cv,g};};
   const layoutRows=(g,fs)=>{
     g.font=fs+'px '+FONT;
     const lh=Math.round(fs*1.3),pad=fs>=20?16:8;
