@@ -300,10 +300,16 @@ input:checked+.tgt:before{transform:translateX(20px)}
         <button class="btn btn-o btn-sm" onclick="cleanSentBills()">🗑️ ลบรูปบิลของสัปดาห์ที่ส่งแล้ว</button>
         <button class="btn btn-o btn-sm" onclick="cleanWorkPhotos()">🗑️ ลบรูปถ่ายงานทั้งหมด</button>
       </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px">
+        <span style="font-size:13px">เก็บข้อมูลไว้</span>
+        <select id="keepm" style="appearance:auto;width:auto"><option value="4">4 เดือน</option><option value="5" selected>5 เดือน</option></select>
+        <button class="btn btn-d btn-sm" onclick="pruneOld()">🗑️ ลบข้อมูลเก่ากว่านี้</button>
+      </div>
+      <p class="mu" style="font-size:12px;margin-top:6px">นับเดือนปัจจุบันรวมอยู่ด้วย ลบทั้งข้อมูลงานและรูปของวันที่เก่ากว่านั้น กู้คืนได้จากไฟล์สำรองเท่านั้น</p>
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.1 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.2 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -1649,6 +1655,21 @@ function photoKeys(prefix,filter){
 }
 function freeKeys(keys){
   let n=0;keys.forEach(k=>{try{n+=localStorage.getItem(k).length*2;localStorage.removeItem(k);}catch(e){}});return n;
+}
+function pruneOld(){
+  const keep=parseInt(document.getElementById('keepm').value)||5;
+  const t=new Date();
+  const cut=dStr(new Date(t.getFullYear(),t.getMonth()-(keep-1),1));   // วันแรกของเดือนที่เก็บเดือนเก่าสุด
+  const all=DB.getDeliveries();
+  const old=all.filter(d=>d.date<cut);
+  if(!old.length){toast('ไม่มีข้อมูลเก่ากว่า '+keep+' เดือน','ok');return;}
+  if(!confirm(`ลบข้อมูลงานก่อนวันที่ ${thDate(cut)} จำนวน ${old.length} วัน พร้อมรูปทั้งหมดของวันเหล่านั้น?
+กู้คืนได้จากไฟล์สำรองเท่านั้น`))return;
+  const keys=[];old.forEach(d=>{keys.push('nitori_ph_'+d.id,'nitori_tp_'+d.id);});
+  const n=freeKeys(keys);
+  DB.saveDeliveries(all.filter(d=>d.date>=cut));
+  showStorage();loadHome();
+  toast(`🗑️ ลบ ${old.length} วันแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
 }
 function cleanSentBills(){
   let sent='';try{sent=localStorage.getItem('nitori_sent')||''}catch(e){}
