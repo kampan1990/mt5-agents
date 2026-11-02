@@ -309,7 +309,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.2 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.3 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -324,18 +324,47 @@ input:checked+.tgt:before{transform:translateX(20px)}
 <div class="ov" id="modal"><div class="mo"><div class="mh"></div><div id="mc"></div></div></div>
 
 <script>
+/* ── รูปภาพเก็บใน IndexedDB (จุได้หลายร้อย MB) มีแคชในหน่วยความจำ ── */
+const PHC={};let idb=null;
+function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open('nitori_photos',1);r.onupgradeneeded=()=>r.result.createObjectStore('p');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+function idbAll(db){return new Promise((res,rej)=>{const out={};const rq=db.transaction('p','readonly').objectStore('p').openCursor();rq.onsuccess=()=>{const c=rq.result;if(c){out[c.key]=c.value;c.continue();}else res(out);};rq.onerror=()=>rej(rq.error);});}
+function idbTx(fn){return new Promise((res,rej)=>{if(!idb){rej(new Error('noidb'));return;}const tx=idb.transaction('p','readwrite');fn(tx.objectStore('p'));tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);});}
+function photoSet(k,v){
+  PHC[k]=v;
+  if(idb)return idbTx(st=>st.put(v,k)).catch(()=>toast('⚠️ บันทึกรูปไม่สำเร็จ — พื้นที่เบราว์เซอร์เต็ม','err'));
+  localStorage.setItem('nitori_'+k,JSON.stringify(v));      // ไม่มี IndexedDB (โหมดส่วนตัว) → ใช้แบบเดิม
+}
+function photoDel(k){
+  delete PHC[k];
+  if(idb)idbTx(st=>st.delete(k)).catch(()=>{});
+  try{localStorage.removeItem('nitori_'+k)}catch(e){}
+}
+async function initPhotos(){
+  try{idb=await idbOpen();Object.assign(PHC,await idbAll(idb));}catch(e){idb=null;}
+  // ย้ายรูปเก่าที่อยู่ใน localStorage มา IndexedDB แล้วลบออกจาก localStorage (คืนพื้นที่)
+  const lk=[];
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&(k.startsWith('nitori_ph_')||k.startsWith('nitori_tp_')))lk.push(k);}}catch(e){}
+  for(const k of lk){
+    try{
+      const nk=k.replace('nitori_','');
+      const v=JSON.parse(localStorage.getItem(k)||'[]');
+      if(idb){if(!PHC[nk]){await idbTx(st=>st.put(v,nk));PHC[nk]=v;}localStorage.removeItem(k);}
+      else if(!PHC[nk])PHC[nk]=v;
+    }catch(e){}
+  }
+}
 /* ── Data Layer (localStorage) ── */
 const DB = {
   getDeliveries(){ try{return JSON.parse(localStorage.getItem('nitori_del')||'[]')}catch{return[]} },
   saveDeliveries(d){ localStorage.setItem('nitori_del',JSON.stringify(d)) },
   getSettings(){ try{return JSON.parse(localStorage.getItem('nitori_cfg')||'{}')}catch{return{}} },
   saveSettings(s){ localStorage.setItem('nitori_cfg',JSON.stringify(s)) },
-  getPhotos(id){ try{return JSON.parse(localStorage.getItem('nitori_ph_'+id)||'[]')}catch{return[]} },
-  savePhotos(id,ps){ localStorage.setItem('nitori_ph_'+id,JSON.stringify(ps)) },
-  deletePhotos(id){ localStorage.removeItem('nitori_ph_'+id) },
-  getTollPhotos(id){ try{return JSON.parse(localStorage.getItem('nitori_tp_'+id)||'[]')}catch{return[]} },
-  saveTollPhotos(id,ps){ localStorage.setItem('nitori_tp_'+id,JSON.stringify(ps)) },
-  deleteTollPhotos(id){ localStorage.removeItem('nitori_tp_'+id) },
+  getPhotos(id){ return PHC['ph_'+id]||[] },
+  savePhotos(id,ps){ photoSet('ph_'+id,ps) },
+  deletePhotos(id){ photoDel('ph_'+id) },
+  getTollPhotos(id){ return PHC['tp_'+id]||[] },
+  saveTollPhotos(id,ps){ photoSet('tp_'+id,ps) },
+  deleteTollPhotos(id){ photoDel('tp_'+id) },
   nextId(){ const n=(parseInt(localStorage.getItem('nitori_seq')||'0'))+1; localStorage.setItem('nitori_seq',n); return n; }
 };
 
@@ -1643,18 +1672,20 @@ function saveSettings(){
 }
 
 /* ── Backup / Restore / Storage ── */
-function showStorage(){
-  try{
-    let n=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('nitori_'))n+=(k.length+localStorage.getItem(k).length)*2;}
-    document.getElementById('stinfo').textContent=`พื้นที่ที่ใช้: ${(n/1048576).toFixed(1)} MB (เบราว์เซอร์จำกัดประมาณ 5 MB)`;
-  }catch(e){}
+async function showStorage(){
+  const el=document.getElementById('stinfo');if(!el)return;
+  let ls=0,ph=0;
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('nitori_'))ls+=(k.length+localStorage.getItem(k).length)*2;}}catch(e){}
+  Object.keys(PHC).forEach(k=>{ph+=JSON.stringify(PHC[k]).length;});
+  let txt=`ข้อมูลงาน ${(ls/1048576).toFixed(2)} MB · รูปภาพ ${(ph/1048576).toFixed(1)} MB`;
+  try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();txt+=` · เบราว์เซอร์อนุญาตรวม ~${Math.round(e.quota/1048576)} MB`;}}catch(e){}
+  el.textContent=txt;
 }
-function photoKeys(prefix,filter){
-  const ids=DB.getDeliveries().filter(filter||(()=>true)).map(d=>prefix+d.id);
-  return ids.filter(k=>{try{return localStorage.getItem(k)!==null}catch(e){return false}});
-}
-function freeKeys(keys){
-  let n=0;keys.forEach(k=>{try{n+=localStorage.getItem(k).length*2;localStorage.removeItem(k);}catch(e){}});return n;
+/* นับขนาด (MB) แล้วลบรูปของวันที่ระบุ kind = 'tp' (บิล) | 'ph' (ถ่ายงาน) */
+function dropPhotos(ids,kinds){
+  let n=0;
+  ids.forEach(id=>kinds.forEach(kd=>{const k=kd+'_'+id;if(PHC[k]){n+=JSON.stringify(PHC[k]).length*2;photoDel(k);}}));
+  return n;
 }
 function pruneOld(){
   const keep=parseInt(document.getElementById('keepm').value)||5;
@@ -1663,31 +1694,30 @@ function pruneOld(){
   const all=DB.getDeliveries();
   const old=all.filter(d=>d.date<cut);
   if(!old.length){toast('ไม่มีข้อมูลเก่ากว่า '+keep+' เดือน','ok');return;}
-  if(!confirm(`ลบข้อมูลงานก่อนวันที่ ${thDate(cut)} จำนวน ${old.length} วัน พร้อมรูปทั้งหมดของวันเหล่านั้น?
-กู้คืนได้จากไฟล์สำรองเท่านั้น`))return;
-  const keys=[];old.forEach(d=>{keys.push('nitori_ph_'+d.id,'nitori_tp_'+d.id);});
-  const n=freeKeys(keys);
-  DB.saveDeliveries(all.filter(d=>d.date>=cut));
+  if(!confirm(`ลบข้อมูลงานก่อนวันที่ ${thDate(cut)} จำนวน ${old.length} วัน พร้อมรูปทั้งหมดของวันเหล่านั้น?\nกู้คืนได้จากไฟล์สำรองเท่านั้น`))return;
+  const n=dropPhotos(old.map(d=>d.id),['ph','tp']);
+  try{DB.saveDeliveries(all.filter(d=>d.date>=cut));}catch(e){toast('ลบไม่สำเร็จ','err');return;}
   showStorage();loadHome();
   toast(`🗑️ ลบ ${old.length} วันแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
 }
 function cleanSentBills(){
   let sent='';try{sent=localStorage.getItem('nitori_sent')||''}catch(e){}
   if(!sent){toast('ยังไม่เคยส่งรายงานสัปดาห์ จึงยังไม่ลบรูปบิลให้','err');return;}
-  const keys=photoKeys('nitori_tp_',d=>d.date<=sent);
-  if(!keys.length){toast('ไม่มีรูปบิลของสัปดาห์ที่ส่งแล้ว','ok');return;}
-  if(!confirm(`ลบรูปบิลทางด่วนของวันที่ถึง ${thDate(sent)} (${keys.length} วัน)? ควรสำรองข้อมูลก่อน`))return;
-  const n=freeKeys(keys);showStorage();toast(`🗑️ ลบแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
+  const ids=DB.getDeliveries().filter(d=>d.date<=sent&&DB.getTollPhotos(d.id).length).map(d=>d.id);
+  if(!ids.length){toast('ไม่มีรูปบิลของสัปดาห์ที่ส่งแล้ว','ok');return;}
+  if(!confirm(`ลบรูปบิลทางด่วนของวันที่ถึง ${thDate(sent)} (${ids.length} วัน)? ควรสำรองข้อมูลก่อน`))return;
+  const n=dropPhotos(ids,['tp']);showStorage();toast(`🗑️ ลบแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
 }
 function cleanWorkPhotos(){
-  const keys=photoKeys('nitori_ph_');
-  if(!keys.length){toast('ไม่มีรูปถ่ายงาน','ok');return;}
-  if(!confirm(`ลบรูปถ่ายงานทั้งหมด (${keys.length} วัน)? รูปบิลทางด่วนไม่ถูกลบ`))return;
-  const n=freeKeys(keys);showStorage();toast(`🗑️ ลบแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
+  const ids=DB.getDeliveries().filter(d=>DB.getPhotos(d.id).length).map(d=>d.id);
+  if(!ids.length){toast('ไม่มีรูปถ่ายงาน','ok');return;}
+  if(!confirm(`ลบรูปถ่ายงานทั้งหมด (${ids.length} วัน)? รูปบิลทางด่วนไม่ถูกลบ`))return;
+  const n=dropPhotos(ids,['ph']);showStorage();toast(`🗑️ ลบแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
 }
 function backupAll(){
   const o={};
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('nitori_'))o[k]=localStorage.getItem(k);}
+  Object.keys(PHC).forEach(k=>{o['nitori_'+k]=JSON.stringify(PHC[k]);});
   const blob=new Blob([JSON.stringify(o)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=`nitori_backup_${todayStr()}.json`;a.click();
@@ -1697,20 +1727,27 @@ function backupAll(){
 function restoreAll(inp){
   const f=inp.files[0];inp.value='';if(!f)return;
   const r=new FileReader();
-  r.onload=e=>{
+  r.onload=async e=>{
     try{
       const o=JSON.parse(e.target.result);
       const keys=Object.keys(o).filter(k=>k.startsWith('nitori_'));
       if(!keys.length)throw new Error('empty');
       if(!confirm(`กู้คืนข้อมูล ${keys.length} รายการ? ข้อมูลปัจจุบันจะถูกแทนที่`))return;
       Object.keys(localStorage).filter(k=>k.startsWith('nitori_')).forEach(k=>localStorage.removeItem(k));
-      keys.forEach(k=>localStorage.setItem(k,o[k]));
-      CFG=DB.getSettings();loadCfg();toast('✅ กู้คืนข้อมูลสำเร็จ','ok');
+      Object.keys(PHC).forEach(k=>delete PHC[k]);
+      if(idb)await idbTx(st=>st.clear());
+      for(const k of keys){
+        if(k.startsWith('nitori_ph_')||k.startsWith('nitori_tp_')){
+          const nk=k.replace('nitori_','');const v=JSON.parse(o[k]||'[]');
+          PHC[nk]=v;if(idb)await idbTx(st=>st.put(v,nk));else localStorage.setItem(k,o[k]);
+        } else localStorage.setItem(k,o[k]);
+      }
+      CFG=DB.getSettings();loadCfg();loadHome();toast('✅ กู้คืนข้อมูลสำเร็จ','ok');
     }catch(err){toast('ไฟล์สำรองไม่ถูกต้อง หรือพื้นที่ไม่พอ','err');}
   };
   r.readAsText(f);
 }
-/* ย่อรูปก่อนเก็บ ลดการใช้พื้นที่ localStorage */
+/* ย่อรูปก่อนเก็บ ลดขนาดไฟล์ */
 function shrinkImg(file,cb){
   const r=new FileReader();
   r.onload=e=>{
@@ -1730,6 +1767,7 @@ function shrinkImg(file,cb){
 /* ── Init ── */
 CFG=DB.getSettings();
 loadHome();
+initPhotos().then(()=>{loadHome();showStorage();});
 </script>
 </body>
 </html>
