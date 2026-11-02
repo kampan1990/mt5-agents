@@ -298,7 +298,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.7 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.8 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -1192,10 +1192,8 @@ function wrapLines(g,text,maxW){
   }
   out.push(cur);return out;
 }
+/* หน้าสรุป A4: ถ้าแถวไม่พอในหน้าเดียว (ช่วงยาว) จะแบ่งเป็นหลายหน้า ไม่ย่อจนอ่านไม่ออก/ล้น คืนค่าเป็น array ของ canvas */
 async function summaryCanvas(start,end,sigData,title){
-  const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;
-  const g=cv.getContext('2d');
-  g.fillStyle='#fff';g.fillRect(0,0,PDF_W,PDF_H);g.textBaseline='middle';
   const M=60,TW=PDF_W-2*M;
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
   const tax=parseFloat(CFG.tax||'1')/100;
@@ -1212,84 +1210,117 @@ async function summaryCanvas(start,end,sigData,title){
       (d.floor_deliveries||[]).map(x=>`ชั้น${x.floor}×${x.count||1}`).join(', ')||'-',f(inc.tl),bonus,f(inc.tot)]};
   });
   const totInc=T.km+T.fl+T.tl+T.up+T.pt, taxAmt=totInc*tax, net=totInc-T.rent-taxAmt;
-  // header block
-  g.fillStyle='#111';g.font='bold 48px '+FONT;g.textAlign='center';
-  g.fillText(title||'สรุปรายได้ประจำงวด',PDF_W/2,75);
-  g.font='28px '+FONT;g.fillStyle='#555';
-  g.fillText(`บริษัท NITORI · วันที่ ${thDate(start)} ถึง ${thDate(end)}`,PDF_W/2,125);
-  g.textAlign='left';g.fillStyle='#111';g.font='28px '+FONT;
-  g.fillText(fitText(g,`พนักงานขับรถ: ${driver}${CFG.truck?'   ('+CFG.truck+')':''}`,TW),M,175);
-  g.fillStyle='#444';
-  g.fillText(`วันวิ่ง ${T.days} วัน · หยุด ${T.hol} วัน · ระยะทางรวม ${f(T.dist)} กม. · ${T.pts} จุด`,M,212);
-  // table layout: wrap cell text, shrink font until everything fits
   const cols=[['วันที่',100,'l'],['เขต / จังหวัด',300,'l'],['จุด',60,'c'],['กม.',70,'c'],['ยกชั้น',150,'l'],['ทางด่วน',110,'r'],['โบนัส',180,'l'],['รายได้',150,'r']];
+  const hh=52,SIGH=230;
   const baseLines=2+(T.up?1:0)+(T.pt?1:0)+1;
   const totalsH=30+baseLines*40+64+(T.rent?40:0)+50+56;
-  const y0=245,hh=52,bottomLimit=PDF_H-M-(totalsH+40+230);
-  let fs=26,useFs=14,layout=null;
-  for(;fs>=14;fs--){
+  const newPage=()=>{const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,PDF_W,PDF_H);g.textBaseline='middle';return{cv,g};};
+  const layoutRows=(g,fs)=>{
     g.font=fs+'px '+FONT;
-    const lh=Math.round(fs*1.3);const pad=fs>=20?16:8;
+    const lh=Math.round(fs*1.3),pad=fs>=20?16:8;
     const rl=rows.map(r=>{
       const lines=r.cells.map((c,k)=>wrapLines(g,c,cols[k][1]-20));
-      const n=Math.max.apply(null,lines.map(l=>l.length));
-      return{lines,h:n*lh+pad};
+      return{lines,h:Math.max.apply(null,lines.map(l=>l.length))*lh+pad};
     });
-    const tot=rl.reduce((a,r)=>a+r.h,0);
-    layout={rl,lh,tot,pad};
-    if(y0+hh+tot<=bottomLimit){useFs=fs;break;}
-  }
-  g.fillStyle='#1a1a2e';g.fillRect(M,y0,TW,hh);
-  g.fillStyle='#fff';g.font='bold 22px '+FONT;
-  let x=M;
-  cols.forEach(c=>{g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';g.fillText(c[0],c[2]==='r'?x+c[1]-10:c[2]==='c'?x+c[1]/2:x+10,y0+hh/2);x+=c[1];});
-  let y=y0+hh;
-  rows.forEach((r,i)=>{
-    const L=layout.rl[i];
+    return{rl,lh,pad,fs,tot:rl.reduce((a,r)=>a+r.h,0)};
+  };
+  const drawHead=(g,first,pageNo)=>{
+    g.fillStyle='#111';g.textAlign='center';
+    if(!first){
+      g.font='bold 30px '+FONT;g.fillText(`${title||'สรุปรายได้ประจำงวด'} (ต่อ) · ${thDate(start)} – ${thDate(end)} · หน้า ${pageNo}`,PDF_W/2,60);
+      return 110;
+    }
+    g.font='bold 48px '+FONT;g.fillText(title||'สรุปรายได้ประจำงวด',PDF_W/2,75);
+    g.font='28px '+FONT;g.fillStyle='#555';
+    g.fillText(`บริษัท NITORI · วันที่ ${thDate(start)} ถึง ${thDate(end)}`,PDF_W/2,125);
+    g.textAlign='left';g.fillStyle='#111';
+    g.fillText(fitText(g,`พนักงานขับรถ: ${driver}${CFG.truck?'   ('+CFG.truck+')':''}`,TW),M,175);
+    g.fillStyle='#444';
+    g.fillText(`วันวิ่ง ${T.days} วัน · หยุด ${T.hol} วัน · ระยะทางรวม ${f(T.dist)} กม. · ${T.pts} จุด`,M,212);
+    return 245;
+  };
+  const tableHead=(g,y)=>{
+    g.fillStyle='#1a1a2e';g.fillRect(M,y,TW,hh);
+    g.fillStyle='#fff';g.font='bold 22px '+FONT;
+    let x=M;
+    cols.forEach(c=>{g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';g.fillText(c[0],c[2]==='r'?x+c[1]-10:c[2]==='c'?x+c[1]/2:x+10,y+hh/2);x+=c[1];});
+    return y+hh;
+  };
+  const drawRow=(g,lay,i,y)=>{
+    const r=rows[i],L=lay.rl[i];
     if(i%2){g.fillStyle='#f4f5f8';g.fillRect(M,y,TW,L.h);}
     let cx=M;
     cols.forEach((c,k)=>{
       g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';
       g.fillStyle=r.hol?'#999':'#111';
-      g.font=(k===7&&!r.hol?'bold ':'')+useFs+'px '+FONT;
+      g.font=(k===7&&!r.hol?'bold ':'')+lay.fs+'px '+FONT;
       const px=c[2]==='r'?cx+c[1]-10:c[2]==='c'?cx+c[1]/2:cx+10;
       g.save();g.beginPath();g.rect(cx,y,c[1],L.h);g.clip();
-      L.lines[k].forEach((ln,q)=>g.fillText(ln,px,y+layout.pad/2+layout.lh*q+layout.lh/2));
+      L.lines[k].forEach((ln,q)=>g.fillText(ln,px,y+lay.pad/2+lay.lh*q+lay.lh/2));
       g.restore();
       cx+=c[1];
     });
-    y+=L.h;
-  });
-  g.strokeStyle='#333';g.lineWidth=2;g.beginPath();g.moveTo(M,y);g.lineTo(PDF_W-M,y);g.stroke();
-  // totals box (right)
-  y+=30;
-  const bx=PDF_W-M-560;
-  const lines=[['เหมาจ่ายระยะทาง',f(T.km)+' ฿'],['ยกของขึ้นชั้น',f(T.fl)+' ฿']];
-  if(T.up)lines.push(['ต่างจังหวัด',f(T.up)+' ฿']);
-  if(T.pt)lines.push(['จุดที่ '+PT7_MIN+' ขึ้นไป',f(T.pt)+' ฿']);
-  lines.push(['ค่าทางด่วนรวม',f(T.tl)+' ฿']);
-  g.font='28px '+FONT;
-  lines.forEach(l=>{g.textAlign='left';g.fillStyle='#444';g.fillText(l[0],bx,y+18);g.textAlign='right';g.fillStyle='#111';g.fillText(l[1],PDF_W-M,y+18);y+=40;});
-  g.fillStyle='#1a1a2e';g.fillRect(bx-10,y,570,52);
-  g.fillStyle='#fff';g.font='bold 30px '+FONT;g.textAlign='left';g.fillText('รวมรายได้',bx,y+26);g.textAlign='right';g.fillText(f(totInc)+' ฿',PDF_W-M,y+26);y+=64;
-  g.font='28px '+FONT;g.fillStyle='#c0392b';
-  if(T.rent){g.textAlign='left';g.fillText('หัก ค่าเช่ารถ',bx,y+18);g.textAlign='right';g.fillText('- '+f(T.rent)+' ฿',PDF_W-M,y+18);y+=40;}
-  g.textAlign='left';g.fillText(`หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%`,bx,y+18);g.textAlign='right';g.fillText('- '+taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+18);y+=50;
-  g.fillStyle='#2d7d46';g.fillRect(bx-10,y,570,56);
-  g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+28);y+=56;
-  // signatures
-  const sy=PDF_H-M-230;
-  const sw=420;
-  const boxes=[[M+20,'ลายเซ็นพนักงานขับรถ','('+(CFG.name||'................................')+')'],[PDF_W-M-20-sw,'ลายเซ็นผู้อนุมัติ','(................................)']];
-  for(let k=0;k<2;k++){
-    const [sx,lab,nm]=boxes[k];
-    if(k===0&&sigData){try{const im=await loadImg(sigData);const sc=Math.min(260/im.width,100/im.height);g.drawImage(im,sx+(sw-im.width*sc)/2,sy+110-im.height*sc,im.width*sc,im.height*sc);}catch(e){}}
-    g.strokeStyle='#999';g.lineWidth=2;g.beginPath();g.moveTo(sx,sy+115);g.lineTo(sx+sw,sy+115);g.stroke();
-    g.textAlign='center';g.fillStyle='#555';g.font='24px '+FONT;
-    g.fillText(fitText(g,lab,sw),sx+sw/2,sy+140);g.fillText(fitText(g,nm,sw),sx+sw/2,sy+172);
-    g.fillText(k===0?'วันที่ '+new Date().toLocaleDateString('th-TH'):'วันที่ ..../..../........',sx+sw/2,sy+204);
+    return y+L.h;
+  };
+  const drawTotals=(g,y)=>{
+    g.strokeStyle='#333';g.lineWidth=2;g.beginPath();g.moveTo(M,y);g.lineTo(PDF_W-M,y);g.stroke();
+    y+=30;
+    const bx=PDF_W-M-560;
+    const lines=[['เหมาจ่ายระยะทาง',f(T.km)+' ฿'],['ยกของขึ้นชั้น',f(T.fl)+' ฿']];
+    if(T.up)lines.push(['ต่างจังหวัด',f(T.up)+' ฿']);
+    if(T.pt)lines.push(['จุดที่ '+PT7_MIN+' ขึ้นไป',f(T.pt)+' ฿']);
+    lines.push(['ค่าทางด่วนรวม',f(T.tl)+' ฿']);
+    g.font='28px '+FONT;
+    lines.forEach(l=>{g.textAlign='left';g.fillStyle='#444';g.fillText(l[0],bx,y+18);g.textAlign='right';g.fillStyle='#111';g.fillText(l[1],PDF_W-M,y+18);y+=40;});
+    g.fillStyle='#1a1a2e';g.fillRect(bx-10,y,570,52);
+    g.fillStyle='#fff';g.font='bold 30px '+FONT;g.textAlign='left';g.fillText('รวมรายได้',bx,y+26);g.textAlign='right';g.fillText(f(totInc)+' ฿',PDF_W-M,y+26);y+=64;
+    g.font='28px '+FONT;g.fillStyle='#c0392b';
+    if(T.rent){g.textAlign='left';g.fillText('หัก ค่าเช่ารถ',bx,y+18);g.textAlign='right';g.fillText('- '+f(T.rent)+' ฿',PDF_W-M,y+18);y+=40;}
+    g.textAlign='left';g.fillText(`หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%`,bx,y+18);g.textAlign='right';g.fillText('- '+taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+18);y+=50;
+    g.fillStyle='#2d7d46';g.fillRect(bx-10,y,570,56);
+    g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+28);
+  };
+  const drawSign=async(g)=>{
+    const sy=PDF_H-M-SIGH,sw=420;
+    const boxes=[[M+20,'ลายเซ็นพนักงานขับรถ','('+(CFG.name||'................................')+')'],[PDF_W-M-20-sw,'ลายเซ็นผู้อนุมัติ','(................................)']];
+    for(let k=0;k<2;k++){
+      const[sx,lab,nm]=boxes[k];
+      if(k===0&&sigData){try{const im=await loadImg(sigData);const sc=Math.min(260/im.width,100/im.height);g.drawImage(im,sx+(sw-im.width*sc)/2,sy+110-im.height*sc,im.width*sc,im.height*sc);}catch(e){}}
+      g.strokeStyle='#999';g.lineWidth=2;g.beginPath();g.moveTo(sx,sy+115);g.lineTo(sx+sw,sy+115);g.stroke();
+      g.textAlign='center';g.fillStyle='#555';g.font='24px '+FONT;
+      g.fillText(fitText(g,lab,sw),sx+sw/2,sy+140);g.fillText(fitText(g,nm,sw),sx+sw/2,sy+172);
+      g.fillText(k===0?'วันที่ '+new Date().toLocaleDateString('th-TH'):'วันที่ ..../..../........',sx+sw/2,sy+204);
+    }
+  };
+  // 1) ลองให้พอในหน้าเดียว (ฟอนต์ไม่เล็กกว่า 18)
+  const probe=newPage();
+  const y0=245;
+  let single=null;
+  for(let fs=26;fs>=18;fs--){
+    const lay=layoutRows(probe.g,fs);
+    if(y0+hh+lay.tot<=PDF_H-M-(totalsH+40+SIGH)){single=lay;break;}
   }
-  return cv;
+  if(single){
+    const pg=newPage();
+    let y=tableHead(pg.g,drawHead(pg.g,true,1));
+    for(let i=0;i<rows.length;i++)y=drawRow(pg.g,single,i,y);
+    drawTotals(pg.g,y);await drawSign(pg.g);
+    return[pg.cv];
+  }
+  // 2) หลายหน้า: ฟอนต์ 20 ตารางต่อเนื่อง หน้าสุดท้ายมียอดรวมและลายเซ็น
+  const lay=layoutRows(probe.g,20);
+  const pages=[];
+  let pg=newPage();
+  let y=tableHead(pg.g,drawHead(pg.g,true,1));
+  const limit=PDF_H-M-20;
+  for(let i=0;i<rows.length;i++){
+    if(y+lay.rl[i].h>limit){pages.push(pg);pg=newPage();y=tableHead(pg.g,drawHead(pg.g,false,pages.length+1));}
+    y=drawRow(pg.g,lay,i,y);
+  }
+  if(y+totalsH+40+SIGH>PDF_H-M){pages.push(pg);pg=newPage();y=drawHead(pg.g,false,pages.length+1);}
+  drawTotals(pg.g,y);await drawSign(pg.g);
+  pages.push(pg);
+  return pages.map(p=>p.cv);
 }
 /* ── Excel (.xlsx) แบบเขียนเอง ไม่พึ่งไลบรารี: zip แบบ store + XML ── */
 const CRC_T=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
@@ -1486,8 +1517,8 @@ function markSent(end){try{localStorage.setItem('nitori_sent',end)}catch(e){}}
 async function savePDF(start,end,sigData){
   toast('⏳ กำลังสร้าง PDF...');
   try{
-    const cv=await summaryCanvas(start,end,sigData);
-    await deliverPDF([{name:`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`,blob:makePDF([cv])}],null);
+    const cvs=await summaryCanvas(start,end,sigData);
+    await deliverPDF([{name:`NITORI_สรุปรายได้_${start}_ถึง_${end}.pdf`,blob:makePDF(cvs)}],null);
   }catch(err){console.error(err);toast('สร้าง PDF ไม่สำเร็จ — ใช้ปุ่มพิมพ์แทน','err');}
 }
 /* รายสัปดาห์: PDF สรุป 1 ไฟล์ + PDF บิลค่าทางด่วน 1 ไฟล์ (เรียงวันที่) */
@@ -1504,7 +1535,7 @@ async function weeklyPDF(start,end,sigData,send){
     let allOk=true;const all=[];
     for(const k of pk){
       const[w0,w1]=k.w,[m0,m1]=k.m;
-      const files=[{name:`NITORI_สรุปงานสัปดาห์_${w0}_ถึง_${w1}.pdf`,blob:makePDF([await summaryCanvas(w0,w1,sigData,'สรุปงานประจำสัปดาห์')])}];
+      const files=[{name:`NITORI_สรุปงานสัปดาห์_${w0}_ถึง_${w1}.pdf`,blob:makePDF(await summaryCanvas(w0,w1,sigData,'สรุปงานประจำสัปดาห์'))}];
       const items=weekBills(w0,w1);
       if(items.length)files.push({name:`NITORI_บิลทางด่วน_${w0}_ถึง_${w1}.pdf`,blob:makePDF(await billPages(w0,w1,items))});
       files.push({name:`NITORI_ข้อมูลสะสมเดือน_${m0}_ถึง_${m1}.xlsx`,blob:weekXlsx(m0,m1)});
