@@ -295,10 +295,15 @@ input:checked+.tgt:before{transform:translateX(20px)}
       </div>
       <input type="file" id="restore-in" accept="application/json,.json" style="display:none" onchange="restoreAll(this)">
       <div id="stinfo" class="mu" style="font-size:12px;margin-top:8px"></div>
+      <p class="mu" style="font-size:12px;margin:12px 0 8px">พื้นที่เต็ม? สำรองข้อมูลก่อน แล้วลบรูปที่ไม่ต้องใช้แล้ว (ข้อมูลงานและตัวเลขยังอยู่ครบ):</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-o btn-sm" onclick="cleanSentBills()">🗑️ ลบรูปบิลของสัปดาห์ที่ส่งแล้ว</button>
+        <button class="btn btn-o btn-sm" onclick="cleanWorkPhotos()">🗑️ ลบรูปถ่ายงานทั้งหมด</button>
+      </div>
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.0 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.1 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -500,6 +505,7 @@ function initForm(dEdit){
     document.getElementById('fnotes').value=dEdit.notes||'';
     renderFloors(dEdit.floor_deliveries||[]);
     pendTollPics=DB.getTollPhotos(dEdit.id);
+    pendPics=DB.getPhotos(dEdit.id);
   } else {
     document.getElementById('etitle').textContent='📝 บันทึกงานวันนี้';
     document.getElementById('eid').value='';
@@ -618,14 +624,8 @@ document.getElementById('eform').addEventListener('submit',e=>{
   if(idx>=0)dels[idx]=del; else dels.push(del);
   try{
     DB.saveDeliveries(dels);
-    if(pendPics.length){
-      const existing=DB.getPhotos(del.id);
-      DB.savePhotos(del.id,[...existing,...pendPics]);
-    }
-    if(pendTollPics.length){
-      const existing=DB.getTollPhotos(del.id);
-      DB.saveTollPhotos(del.id,[...existing,...pendTollPics]);
-    }
+    if(pendPics.length)DB.savePhotos(del.id,pendPics);else DB.deletePhotos(del.id);
+    if(pendTollPics.length)DB.saveTollPhotos(del.id,pendTollPics);else DB.deleteTollPhotos(del.id);
   }catch(err){
     toast('⚠️ พื้นที่เก็บข้อมูลเต็ม — สำรองข้อมูลแล้วลบรูปเก่า','err');
     return;
@@ -1642,6 +1642,27 @@ function showStorage(){
     let n=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('nitori_'))n+=(k.length+localStorage.getItem(k).length)*2;}
     document.getElementById('stinfo').textContent=`พื้นที่ที่ใช้: ${(n/1048576).toFixed(1)} MB (เบราว์เซอร์จำกัดประมาณ 5 MB)`;
   }catch(e){}
+}
+function photoKeys(prefix,filter){
+  const ids=DB.getDeliveries().filter(filter||(()=>true)).map(d=>prefix+d.id);
+  return ids.filter(k=>{try{return localStorage.getItem(k)!==null}catch(e){return false}});
+}
+function freeKeys(keys){
+  let n=0;keys.forEach(k=>{try{n+=localStorage.getItem(k).length*2;localStorage.removeItem(k);}catch(e){}});return n;
+}
+function cleanSentBills(){
+  let sent='';try{sent=localStorage.getItem('nitori_sent')||''}catch(e){}
+  if(!sent){toast('ยังไม่เคยส่งรายงานสัปดาห์ จึงยังไม่ลบรูปบิลให้','err');return;}
+  const keys=photoKeys('nitori_tp_',d=>d.date<=sent);
+  if(!keys.length){toast('ไม่มีรูปบิลของสัปดาห์ที่ส่งแล้ว','ok');return;}
+  if(!confirm(`ลบรูปบิลทางด่วนของวันที่ถึง ${thDate(sent)} (${keys.length} วัน)? ควรสำรองข้อมูลก่อน`))return;
+  const n=freeKeys(keys);showStorage();toast(`🗑️ ลบแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
+}
+function cleanWorkPhotos(){
+  const keys=photoKeys('nitori_ph_');
+  if(!keys.length){toast('ไม่มีรูปถ่ายงาน','ok');return;}
+  if(!confirm(`ลบรูปถ่ายงานทั้งหมด (${keys.length} วัน)? รูปบิลทางด่วนไม่ถูกลบ`))return;
+  const n=freeKeys(keys);showStorage();toast(`🗑️ ลบแล้ว ได้พื้นที่คืน ${(n/1048576).toFixed(1)} MB`,'ok');
 }
 function backupAll(){
   const o={};
