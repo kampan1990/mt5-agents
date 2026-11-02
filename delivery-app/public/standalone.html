@@ -298,7 +298,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.8 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.9 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -1271,14 +1271,14 @@ async function summaryCanvas(start,end,sigData,title){
     if(T.pt)lines.push(['จุดที่ '+PT7_MIN+' ขึ้นไป',f(T.pt)+' ฿']);
     lines.push(['ค่าทางด่วนรวม',f(T.tl)+' ฿']);
     g.font='28px '+FONT;
-    lines.forEach(l=>{g.textAlign='left';g.fillStyle='#444';g.fillText(l[0],bx,y+18);g.textAlign='right';g.fillStyle='#111';g.fillText(l[1],PDF_W-M,y+18);y+=40;});
+    lines.forEach(l=>{g.textAlign='left';g.fillStyle='#444';g.fillText(l[0],bx,y+18);g.textAlign='right';g.fillStyle='#111';g.fillText(l[1],PDF_W-M-16,y+18);y+=40;});
     g.fillStyle='#1a1a2e';g.fillRect(bx-10,y,570,52);
-    g.fillStyle='#fff';g.font='bold 30px '+FONT;g.textAlign='left';g.fillText('รวมรายได้',bx,y+26);g.textAlign='right';g.fillText(f(totInc)+' ฿',PDF_W-M,y+26);y+=64;
+    g.fillStyle='#fff';g.font='bold 30px '+FONT;g.textAlign='left';g.fillText('รวมรายได้',bx,y+26);g.textAlign='right';g.fillText(f(totInc)+' ฿',PDF_W-M-16,y+26);y+=64;
     g.font='28px '+FONT;g.fillStyle='#c0392b';
-    if(T.rent){g.textAlign='left';g.fillText('หัก ค่าเช่ารถ',bx,y+18);g.textAlign='right';g.fillText('- '+f(T.rent)+' ฿',PDF_W-M,y+18);y+=40;}
-    g.textAlign='left';g.fillText(`หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%`,bx,y+18);g.textAlign='right';g.fillText('- '+taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+18);y+=50;
+    if(T.rent){g.textAlign='left';g.fillText('หัก ค่าเช่ารถ',bx,y+18);g.textAlign='right';g.fillText('- '+f(T.rent)+' ฿',PDF_W-M-16,y+18);y+=40;}
+    g.textAlign='left';g.fillText(`หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%`,bx,y+18);g.textAlign='right';g.fillText('- '+taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M-16,y+18);y+=50;
     g.fillStyle='#2d7d46';g.fillRect(bx-10,y,570,56);
-    g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+28);
+    g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M-16,y+28);
   };
   const drawSign=async(g)=>{
     const sy=PDF_H-M-SIGH,sw=420;
