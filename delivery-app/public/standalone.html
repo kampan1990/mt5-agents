@@ -298,7 +298,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.6 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v2.7 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -797,6 +797,16 @@ function exportExcel(mode,s0,e0){
   toast('📥 ดาวน์โหลด CSV สำเร็จ (เปิดได้ใน Excel)','ok');
 }
 
+function monthBounds(ds){
+  const[y,m]=ds.split('-').map(Number);
+  return[`${y}-${String(m).padStart(2,'0')}-01`,dStr(new Date(y,m,0))];
+}
+/* รอบส่งวันศุกร์: Excel สะสมตั้งแต่ต้นเดือน; ถ้าสัปดาห์คาบเกี่ยวสองเดือน แยกเป็น 2 ชุด (เดือนเก่าถึงสิ้นเดือน / เดือนใหม่เฉพาะของเดือนใหม่) */
+function weekPackages(W,F){
+  const[m0]=monthBounds(F),[w0,w1]=monthBounds(W);
+  if(w0===m0)return[{w:[W,F],m:[m0,F]}];
+  return[{w:[W,w1],m:[w0,w1]},{w:[m0,F],m:[m0,F]}];
+}
 function weekRange(endStr){
   const e=new Date(endStr+'T00:00:00');const b=new Date(e);b.setDate(b.getDate()-6);
   return[dStr(b),endStr];
@@ -806,6 +816,10 @@ function loadWeek(){
   const[start]=weekRange(end);
   const dow=new Date(end+'T00:00:00').getDay();
   document.getElementById('wrange').innerHTML=`สัปดาห์ ${thDate(start)} – ${thDate(end)} (เสาร์–ศุกร์)${weekSent(end)?' <b style="color:var(--g)">· ✅ ส่งแล้ว</b>':''}${dow!==5?' <b style="color:var(--r)">· วันที่เลือกไม่ใช่วันศุกร์</b>':''}`;
+  const pk=weekPackages(start,end);
+  document.getElementById('wrange').innerHTML+=pk.length>1
+    ?`<br><small>ข้ามเดือน → แยกส่ง 2 ชุด: Excel สะสม ${pk.map(k=>thDate(k.m[0])+'–'+thDate(k.m[1])).join(' และ ')}</small>`
+    :`<br><small>ไฟล์ Excel จะสะสมข้อมูลตั้งแต่ต้นเดือน ${thDate(pk[0].m[0])} – ${thDate(pk[0].m[1])}</small>`;
   loadSum(start,end,'wka',true);
 }
 
@@ -1209,19 +1223,21 @@ async function summaryCanvas(start,end,sigData,title){
   g.fillText(`วันวิ่ง ${T.days} วัน · หยุด ${T.hol} วัน · ระยะทางรวม ${f(T.dist)} กม. · ${T.pts} จุด`,M,212);
   // table layout: wrap cell text, shrink font until everything fits
   const cols=[['วันที่',100,'l'],['เขต / จังหวัด',300,'l'],['จุด',60,'c'],['กม.',70,'c'],['ยกชั้น',150,'l'],['ทางด่วน',110,'r'],['โบนัส',180,'l'],['รายได้',150,'r']];
-  const y0=245,hh=52,bottomLimit=PDF_H-M-600;
-  let fs=26,layout=null;
+  const baseLines=2+(T.up?1:0)+(T.pt?1:0)+1;
+  const totalsH=30+baseLines*40+64+(T.rent?40:0)+50+56;
+  const y0=245,hh=52,bottomLimit=PDF_H-M-(totalsH+40+230);
+  let fs=26,useFs=14,layout=null;
   for(;fs>=14;fs--){
     g.font=fs+'px '+FONT;
-    const lh=Math.round(fs*1.3);
+    const lh=Math.round(fs*1.3);const pad=fs>=20?16:8;
     const rl=rows.map(r=>{
       const lines=r.cells.map((c,k)=>wrapLines(g,c,cols[k][1]-20));
       const n=Math.max.apply(null,lines.map(l=>l.length));
-      return{lines,h:n*lh+16};
+      return{lines,h:n*lh+pad};
     });
     const tot=rl.reduce((a,r)=>a+r.h,0);
-    layout={rl,lh,tot};
-    if(y0+hh+tot<=bottomLimit)break;
+    layout={rl,lh,tot,pad};
+    if(y0+hh+tot<=bottomLimit){useFs=fs;break;}
   }
   g.fillStyle='#1a1a2e';g.fillRect(M,y0,TW,hh);
   g.fillStyle='#fff';g.font='bold 22px '+FONT;
@@ -1235,9 +1251,11 @@ async function summaryCanvas(start,end,sigData,title){
     cols.forEach((c,k)=>{
       g.textAlign=c[2]==='r'?'right':c[2]==='c'?'center':'left';
       g.fillStyle=r.hol?'#999':'#111';
-      g.font=(k===7&&!r.hol?'bold ':'')+fs+'px '+FONT;
+      g.font=(k===7&&!r.hol?'bold ':'')+useFs+'px '+FONT;
       const px=c[2]==='r'?cx+c[1]-10:c[2]==='c'?cx+c[1]/2:cx+10;
-      L.lines[k].forEach((ln,q)=>g.fillText(ln,px,y+8+layout.lh*q+layout.lh/2));
+      g.save();g.beginPath();g.rect(cx,y,c[1],L.h);g.clip();
+      L.lines[k].forEach((ln,q)=>g.fillText(ln,px,y+layout.pad/2+layout.lh*q+layout.lh/2));
+      g.restore();
       cx+=c[1];
     });
     y+=L.h;
@@ -1260,7 +1278,7 @@ async function summaryCanvas(start,end,sigData,title){
   g.fillStyle='#2d7d46';g.fillRect(bx-10,y,570,56);
   g.fillStyle='#fff';g.font='bold 32px '+FONT;g.textAlign='left';g.fillText('รับสุทธิ',bx,y+28);g.textAlign='right';g.fillText(net.toLocaleString('th-TH',{minimumFractionDigits:2})+' ฿',PDF_W-M,y+28);y+=56;
   // signatures
-  const sy=Math.max(y+40,PDF_H-M-230);
+  const sy=PDF_H-M-230;
   const sw=420;
   const boxes=[[M+20,'ลายเซ็นพนักงานขับรถ','('+(CFG.name||'................................')+')'],[PDF_W-M-20-sw,'ลายเซ็นผู้อนุมัติ','(................................)']];
   for(let k=0;k<2;k++){
@@ -1330,7 +1348,7 @@ function weekXlsx(start,end){
   });
   const tax=parseFloat(CFG.tax||'1')/100,taxAmt=T.tot*tax;
   const rows=[
-    [B('รายงานสรุปงานประจำสัปดาห์ '+thDate(start)+' – '+thDate(end))],
+    [B('รายงานสรุปงานสะสมรายเดือน '+thDate(start)+' – '+thDate(end))],
     ['พนักงานขับรถ:',CFG.name||'','รถ/สาย:',CFG.truck||''],
     [],head,...body,
     [B('รวม'),'',B('วิ่ง '+T.days+' วัน'),B('หยุด '+T.hol+' วัน'),B(T.pts),B(T.dist),'',B(T.tl),B(T.km),B(T.fl),B(T.up),B(T.pt),B(T.tot),B(T.rent)],
@@ -1341,7 +1359,7 @@ function weekXlsx(start,end){
   return makeXlsx(rows,[14,6,24,18,12,12,22,16,16,14,16,18,16,16,24,10]);
 }
 function downloadWeekXlsx(start,end){
-  downloadBlob(weekXlsx(start,end),`NITORI_ข้อมูลสัปดาห์_${start}_ถึง_${end}.xlsx`);
+  weekPackages(start,end).forEach((k,i)=>setTimeout(()=>downloadBlob(weekXlsx(k.m[0],k.m[1]),`NITORI_ข้อมูลสะสมเดือน_${k.m[0]}_ถึง_${k.m[1]}.xlsx`),i*600));
   toast('📥 ดาวน์โหลดไฟล์ Excel แล้ว','ok');
 }
 function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
@@ -1386,7 +1404,8 @@ function weekBills(start,end){
   });
   return items;
 }
-function weekMail(start,end,nBills){
+function weekMail(start,end,nBills,m0,m1){
+  m0=m0||start;m1=m1||end;
   const driver=CFG.name||'';
   const tax=parseFloat(CFG.tax||'1')/100;
   const dels=DB.getDeliveries().filter(x=>x.date>=start&&x.date<=end).sort((a,b)=>a.date.localeCompare(b.date));
@@ -1398,6 +1417,7 @@ function weekMail(start,end,nBills){
     return`${thDate(d.date)}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0} จุด ${d.distance||0} กม.${bt?' ['+bt+']':''}`;
   }).join('\n');
   const taxAmt=totInc*tax;
+  let monthTot=0;DB.getDeliveries().filter(x=>x.date>=m0&&x.date<=m1&&!x.is_holiday).forEach(d=>{monthTot+=calcInc(d).tot;});
   const subject=`${driver} นำส่งแผนงานวันที่ ${thDate(start)} - ${thDate(end)}`;
   const body=`เรียน หัวหน้า
 
@@ -1406,7 +1426,7 @@ ${driver} นำส่งแผนงานวันที่ ${thDate(start)} -
 รายละเอียดไฟล์แนบ:
 - PDF สรุปงานประจำสัปดาห์ (ตารางงานรายวัน)
 - ${nBills?'PDF บิลค่าทางด่วน '+nBills+' รูป เรียงตามวันที่':'ไม่มีบิลค่าทางด่วนแนบ'}
-- ไฟล์ Excel (.xlsx) ข้อมูลงานรายวันและสรุปยอด
+- ไฟล์ Excel (.xlsx) ข้อมูลสะสมตั้งแต่ต้นเดือน ${thDate(m0)} - ${thDate(m1)}
 
 รายละเอียดงาน:
 ${lines}
@@ -1415,6 +1435,7 @@ ${lines}
 รวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}
 หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท
 รับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท
+ยอดรวมรายได้สะสมตั้งแต่ต้นเดือน (${thDate(m0)} - ${thDate(m1)}): ${monthTot.toLocaleString()} บาท
 
 ขอแสดงความนับถือ
 ${driver}`;
@@ -1478,15 +1499,23 @@ async function weeklyPDF(start,end,sigData,send){
   sending=true;
   toast(direct?'⏳ กำลังสร้างและส่งอีเมล์...':'⏳ กำลังสร้างไฟล์ PDF...');
   try{
-    const files=[{name:`NITORI_สรุปงานสัปดาห์_${start}_ถึง_${end}.pdf`,blob:makePDF([await summaryCanvas(start,end,sigData,'สรุปงานประจำสัปดาห์')])}];
-    const items=weekBills(start,end);
-    if(items.length)files.push({name:`NITORI_บิลทางด่วน_${start}_ถึง_${end}.pdf`,blob:makePDF(await billPages(start,end,items))});
-    files.push({name:`NITORI_ข้อมูลสัปดาห์_${start}_ถึง_${end}.xlsx`,blob:weekXlsx(start,end)});
-    const mail=send?weekMail(start,end,items.length):null;
-    let ok;
-    if(direct)ok=await sendDirect(files,mail);
-    else ok=await deliverPDF(files,mail);
-    if(send&&ok){markSent(end);loadHome();if(document.getElementById('wdate'))loadWeek();}
+    const pk=weekPackages(start,end).filter(k=>DB.getDeliveries().some(d=>d.date>=k.w[0]&&d.date<=k.w[1]&&!d.is_holiday));
+    if(!pk.length){toast('ไม่มีข้อมูลงานในสัปดาห์นี้','err');return;}
+    let allOk=true;const all=[];
+    for(const k of pk){
+      const[w0,w1]=k.w,[m0,m1]=k.m;
+      const files=[{name:`NITORI_สรุปงานสัปดาห์_${w0}_ถึง_${w1}.pdf`,blob:makePDF([await summaryCanvas(w0,w1,sigData,'สรุปงานประจำสัปดาห์')])}];
+      const items=weekBills(w0,w1);
+      if(items.length)files.push({name:`NITORI_บิลทางด่วน_${w0}_ถึง_${w1}.pdf`,blob:makePDF(await billPages(w0,w1,items))});
+      files.push({name:`NITORI_ข้อมูลสะสมเดือน_${m0}_ถึง_${m1}.xlsx`,blob:weekXlsx(m0,m1)});
+      if(send){
+        const mail=weekMail(w0,w1,items.length,m0,m1);
+        const ok=direct?await sendDirect(files,mail):await deliverPDF(files,mail);
+        if(!ok){allOk=false;break;}
+      } else all.push(...files);
+    }
+    if(!send)await deliverPDF(all,null);
+    if(send&&allOk){markSent(end);loadHome();if(document.getElementById('wdate'))loadWeek();}
   }catch(err){console.error(err);toast('สร้าง PDF ไม่สำเร็จ','err');}
   finally{sending=false;}
 }
