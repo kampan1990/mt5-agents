@@ -237,6 +237,11 @@ input:checked+.tgt:before{transform:translateX(20px)}
         <div class="fg"><label>จากวันที่</label><input type="date" id="sstart"></div>
         <div class="fg"><label>ถึงวันที่</label><input type="date" id="send"></div>
       </div>
+      <div class="fg"><label>หรือเลือกงวดจ่ายของเดือน</label><input type="month" id="pmonth"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-o btn-sm" onclick="setPeriod(1)">งวด 1–15 (จ่ายวันที่ 1)</button>
+        <button class="btn btn-o btn-sm" onclick="setPeriod(2)">งวด 16–สิ้นเดือน (จ่ายวันที่ 15)</button>
+      </div>
       <button class="btn btn-g" onclick="loadSum()">ดูสรุปรายได้</button>
     </div></div>
     <div id="suma"></div>
@@ -286,6 +291,18 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div class="card">
+    <div class="ct">💰 Incentive รายเดือน</div>
+    <div class="fs">
+      <p class="mu" style="font-size:12px;margin-bottom:10px">กรอกยอด Incentive ของแต่ละเดือน (บริษัทแจ้งมา) ระบบนำไปรวมในรายงานงวด 16–สิ้นเดือน ซึ่งจ่ายวันที่ 15 ของเดือนถัดไป (งวด 1–15 จ่ายวันที่ 1)</p>
+      <div class="r2">
+        <div class="fg"><label>เดือนที่ทำงาน</label><input type="month" id="incm"></div>
+        <div class="fg"><label>ยอด Incentive (บาท)</label><input type="number" id="inca" min="0" inputmode="decimal" placeholder="0"></div>
+      </div>
+      <button class="btn btn-g btn-sm" onclick="incSave()">💾 บันทึก Incentive</button>
+      <div id="incl" style="margin-top:10px"></div>
+    </div>
+  </div>
+  <div class="card">
     <div class="ct">💾 สำรอง/กู้คืนข้อมูล</div>
     <div class="fs">
       <p class="mu" style="font-size:12px;margin-bottom:10px">ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ถ้าล้างข้อมูลเบราว์เซอร์จะหาย ควรสำรองเป็นระยะ</p>
@@ -309,7 +326,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.3 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.4 (2 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -750,6 +767,8 @@ function initRep(){
   const start=new Date(end);start.setDate(start.getDate()-14);
   document.getElementById('sstart').value=dStr(start);
   document.getElementById('send').value=dStr(end);
+  const pm=new Date(end.getFullYear(),end.getMonth()-(end.getDate()<=15?1:0),1);   // วันที่ 1–15 → เดือนที่แล้ว (งวด 16–สิ้นเดือนที่เพิ่งจบ)
+  document.getElementById('pmonth').value=pm.getFullYear()+'-'+String(pm.getMonth()+1).padStart(2,'0');
 }
 function swTab(name,btn){
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
@@ -832,6 +851,46 @@ function exportExcel(mode,s0,e0){
   toast('📥 ดาวน์โหลด CSV สำเร็จ (เปิดได้ใน Excel)','ok');
 }
 
+/* ── Incentive รายเดือน: กรอกยอดเอง จ่ายพร้อมงวด 16–สิ้นเดือน (จ่ายวันที่ 15 ของเดือนถัดไป) ── */
+const TH_MON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function thMonth(m){const[y,mo]=m.split('-').map(Number);return TH_MON[mo-1]+' '+(y+543);}
+function incGet(){try{return JSON.parse(localStorage.getItem('nitori_inc')||'{}')}catch(e){return{}}}
+/* Incentive ของเดือน M ถูกนับรวมในรายงานที่ครอบคลุมงวด 16–สิ้นเดือน M ครบ */
+function incentiveFor(start,end){
+  const o=incGet(),items=[];
+  Object.keys(o).forEach(m=>{
+    const[y,mo]=m.split('-').map(Number);
+    const b1=dStr(new Date(y,mo,0));
+    const amt=parseFloat(o[m])||0;
+    if(amt>0&&start<=m+'-16'&&end>=b1)items.push({m,amt,pay:dStr(new Date(y,mo,15))});
+  });
+  return items;
+}
+const incTotal=items=>items.reduce((a,i)=>a+i.amt,0);
+const shortDM=ds=>{const[,m,d]=ds.split('-');return d+'/'+m;};
+function incLabel(i){return`ค่า Incentive เดือน ${thMonth(i.m)} (จ่ายวันที่ ${thDate(i.pay)})`;}
+function incRender(){
+  const el=document.getElementById('incl');if(!el)return;
+  const o=incGet();const ks=Object.keys(o).sort().reverse();
+  el.innerHTML=ks.length?ks.map(m=>`<div class="ir"><span class="lbl">${thMonth(m)}</span><span class="val">${(parseFloat(o[m])||0).toLocaleString()} ฿ <button class="btn btn-d btn-ic" style="margin-left:8px" onclick="incDel('${m}')">✕</button></span></div>`).join(''):'<div class="mu" style="font-size:12px">ยังไม่ได้กรอก Incentive</div>';
+}
+function incSave(){
+  const m=document.getElementById('incm').value;const a=parseFloat(document.getElementById('inca').value);
+  if(!m){toast('เลือกเดือนก่อน','err');return;}
+  if(!(a>0)){toast('กรอกยอด Incentive เป็นตัวเลข','err');return;}
+  const o=incGet();o[m]=a;
+  try{localStorage.setItem('nitori_inc',JSON.stringify(o));}catch(e){toast('บันทึกไม่สำเร็จ','err');return;}
+  document.getElementById('inca').value='';incRender();toast(`✅ บันทึก Incentive ${thMonth(m)} แล้ว`,'ok');
+}
+function incDel(m){const o=incGet();delete o[m];try{localStorage.setItem('nitori_inc',JSON.stringify(o));}catch(e){}incRender();}
+function setPeriod(h){
+  const m=document.getElementById('pmonth').value;if(!m){toast('เลือกเดือนก่อน','err');return;}
+  const[y,mo]=m.split('-').map(Number);
+  const last=dStr(new Date(y,mo,0));
+  document.getElementById('sstart').value=h===1?m+'-01':m+'-16';
+  document.getElementById('send').value=h===1?m+'-15':last;
+  loadSum();
+}
 function monthBounds(ds){
   const[y,m]=ds.split('-').map(Number);
   return[`${y}-${String(m).padStart(2,'0')}-01`,dStr(new Date(y,m,0))];
@@ -872,7 +931,8 @@ function loadSum(start0,end0,areaId,weekly){
     totKmDist+=parseFloat(d.distance)||0;totPts+=parseInt(d.point_count)||0;
     return`<div class="ir"><span class="lbl">${fmtShort(d.date)} ${esc(d.zone)||''}${d.province?' / '+esc(d.province):''}<br><small style="color:var(--mu)">${d.point_count||0}จุด ${d.distance||0}กม.${inc.tl?' · ทางด่วน '+inc.tl.toLocaleString():''}${weekly?' · 🧾 '+DB.getTollPhotos(d.id).length+' รูป':''}</small><br>${bonusTags(inc,true)}</span><span class="val" style="color:var(--g)">${inc.tot.toLocaleString()} ฿</span></div>`;
   }).join('');
-  const totInc=totKm+totFl+totTl+totUp+totPt;
+  const incI=incentiveFor(start,end);
+  const totInc=totKm+totFl+totTl+totUp+totPt+incTotal(incI);
   const taxAmt=totInc*tax;
   const net=totInc-totRent-taxAmt;
   const area=document.getElementById(areaId||'suma');
@@ -890,6 +950,7 @@ function loadSum(start0,end0,areaId,weekly){
       ${totTl?`<div class="ir"><span class="lbl">🧾 ค่าทางด่วน</span><span class="val">${totTl.toLocaleString()} ฿</span></div>`:''}
       ${totUp?`<div class="ir"><span class="lbl">🚚 ต่างจังหวัด</span><span class="val">${totUp.toLocaleString()} ฿</span></div>`:''}
       ${totPt?`<div class="ir"><span class="lbl">📍 จุดที่ ${PT7_MIN} ขึ้นไป</span><span class="val">${totPt.toLocaleString()} ฿</span></div>`:''}
+      ${incI.map(i=>`<div class="ir"><span class="lbl">💰 ${incLabel(i)}</span><span class="val">${i.amt.toLocaleString()} ฿</span></div>`).join('')}
       <div class="ir itot"><span class="lbl">รวมรายได้</span><span class="val">${totInc.toLocaleString()} ฿</span></div>
       ${totRent?`<div class="ir" style="color:var(--r)"><span class="lbl">🚗 หัก ค่าเช่ารถ</span><span class="val">- ${totRent.toLocaleString()} ฿</span></div>`:''}
       <div class="ir" style="color:var(--r)"><span class="lbl">หัก ณ ที่จ่าย ${(tax*100).toFixed(0)}%</span><span class="val">- ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} ฿</span></div>
@@ -944,8 +1005,10 @@ function emailSum(start,end){
     const bt=bonusTags(inc,false);
     return`${d.date}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0} จุด ${d.distance||0} กม.${bt?' ['+bt+']':''} = ${inc.tot.toLocaleString()} บาท`;
   }).join('\n');
+  const incI=incentiveFor(start,end);totInc+=incTotal(incI);
+  const incTxt=incI.map(i=>`${incLabel(i)}: ${i.amt.toLocaleString()} บาท\n`).join('');
   const taxAmt=totInc*tax;
-  const body=`เรียน หัวหน้า\n\nสรุปรายได้ประจำงวด ${start} ถึง ${end}\nพนักงานขับรถ: ${driver}\n──────────────────\n${lines}\n──────────────────\nรวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\n\nขอแสดงความนับถือ\n${driver}`;
+  const body=`เรียน หัวหน้า\n\nสรุปรายได้ประจำงวด ${start} ถึง ${end}\nพนักงานขับรถ: ${driver}\n──────────────────\n${lines}\n──────────────────\n${incTxt}รวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\n\nขอแสดงความนับถือ\n${driver}`;
   window.location.href=`mailto:${boss}?subject=${encodeURIComponent(driver+' นำส่งสรุปงานวันที่ '+thDate(start)+' - '+thDate(end))}&body=${encodeURIComponent(body)}`;
 }
 
@@ -959,8 +1022,10 @@ function shareSum(start,end){
     const bt=bonusTags(inc,false);
     return`${d.date}: ${d.zone||'-'}${d.province?' / '+d.province:''} ${d.point_count||0}จุด ${d.distance||0}กม.${bt?' ['+bt+']':''} = ${inc.tot.toLocaleString()}฿`;
   }).join('\n');
+  const incI=incentiveFor(start,end);totInc+=incTotal(incI);
+  const incTxt=incI.map(i=>`💰 ${incLabel(i)}: ${i.amt.toLocaleString()} บาท\n`).join('');
   const taxAmt=totInc*tax;
-  const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\nรวม: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
+  const txt=`💰 สรุปรายได้ ${start} – ${end}\n──────────────────\n${lines}\n──────────────────\n${incTxt}รวม: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}\nหัก ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท\nรับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท`;
   copyAndShare(txt);
 }
 
@@ -1257,10 +1322,11 @@ async function summaryCanvas(start,end,sigData,title){
     return{hol:false,cells:[fmtShort(d.date),(d.zone||'-')+(d.province?' / '+d.province:''),d.point_count||0,d.distance||0,
       (d.floor_deliveries||[]).map(x=>`ชั้น${x.floor}×${x.count||1}`).join(', ')||'-',f(inc.tl),bonus,f(inc.tot)]};
   });
-  const totInc=T.km+T.fl+T.tl+T.up+T.pt, taxAmt=totInc*tax, net=totInc-T.rent-taxAmt;
+  const incI=incentiveFor(start,end);
+  const totInc=T.km+T.fl+T.tl+T.up+T.pt+incTotal(incI), taxAmt=totInc*tax, net=totInc-T.rent-taxAmt;
   const cols=[['วันที่',100,'l'],['เขต / จังหวัด',300,'l'],['จุด',60,'c'],['กม.',70,'c'],['ยกชั้น',150,'l'],['ทางด่วน',110,'r'],['โบนัส',180,'l'],['รายได้',150,'r']];
   const hh=52,SIGH=230;
-  const baseLines=2+(T.up?1:0)+(T.pt?1:0)+1;
+  const baseLines=2+(T.up?1:0)+(T.pt?1:0)+1+incI.length;
   const totalsH=30+baseLines*40+64+(T.rent?40:0)+50+56;
   const newPage=()=>{const cv=document.createElement('canvas');cv.width=PDF_W;cv.height=PDF_H;const g=safeAlign(cv.getContext('2d'));g.fillStyle='#fff';g.fillRect(0,0,PDF_W,PDF_H);g.textBaseline='middle';return{cv,g};};
   const layoutRows=(g,fs)=>{
@@ -1318,6 +1384,7 @@ async function summaryCanvas(start,end,sigData,title){
     if(T.up)lines.push(['ต่างจังหวัด',f(T.up)+' ฿']);
     if(T.pt)lines.push(['จุดที่ '+PT7_MIN+' ขึ้นไป',f(T.pt)+' ฿']);
     lines.push(['ค่าทางด่วนรวม',f(T.tl)+' ฿']);
+    incI.forEach(i=>lines.push(['Incentive '+thMonth(i.m)+' (จ่าย '+shortDM(i.pay)+')',f(i.amt)+' ฿']));
     g.font='28px '+FONT;
     lines.forEach(l=>{g.textAlign='left';g.fillStyle='#444';g.fillText(l[0],bx,y+18);g.textAlign='right';g.fillStyle='#111';g.fillText(l[1],PDF_W-M-16,y+18);y+=40;});
     g.fillStyle='#1a1a2e';g.fillRect(bx-10,y,570,52);
@@ -1425,7 +1492,8 @@ function weekXlsx(start,end){
     const fl=(d.floor_deliveries||[]).filter(f=>f.floor>=3).map(f=>`ชั้น${f.floor}×${f.count||1}`).join(', ')||'ไม่มี';
     return[thDate(d.date),day,d.zone||'',d.province||'',parseInt(d.point_count)||0,parseFloat(d.distance)||0,fl,inc.tl,inc.km,inc.fl,inc.up,inc.pt,inc.tot,inc.rent,d.notes||'','วิ่งงาน'];
   });
-  const tax=parseFloat(CFG.tax||'1')/100,taxAmt=T.tot*tax;
+  const incI=incentiveFor(start,end),incT=incTotal(incI);
+  const tax=parseFloat(CFG.tax||'1')/100,taxAmt=(T.tot+incT)*tax;
   const rows=[
     [B('รายงานสรุปงานสะสมรายเดือน '+thDate(start)+' – '+thDate(end))],
     ['พนักงานขับรถ:',CFG.name||'','รถ/สาย:',CFG.truck||''],
@@ -1433,7 +1501,7 @@ function weekXlsx(start,end){
     [B('รวม'),'',B('วิ่ง '+T.days+' วัน'),B('หยุด '+T.hol+' วัน'),B(T.pts),B(T.dist),'',B(T.tl),B(T.km),B(T.fl),B(T.up),B(T.pt),B(T.tot),B(T.rent)],
     [],
     [B('สรุป')],
-    ['รวมรายได้',T.tot],['หักค่าเช่ารถ',T.rent],['หัก ณ ที่จ่าย '+(+(tax*100).toFixed(2))+'%',+taxAmt.toFixed(2)],[B('รับสุทธิ'),B(+(T.tot-T.rent-taxAmt).toFixed(2))]
+    [incI.length?'รวมรายได้จากงาน':'รวมรายได้',T.tot],...incI.map(i=>[incLabel(i),i.amt]),...(incI.length?[[B('รวมรายได้ทั้งสิ้น'),B(T.tot+incT)]]:[]),['หักค่าเช่ารถ',T.rent],['หัก ณ ที่จ่าย '+(+(tax*100).toFixed(2))+'%',+taxAmt.toFixed(2)],[B('รับสุทธิ'),B(+(T.tot+incT-T.rent-taxAmt).toFixed(2))]
   ];
   return makeXlsx(rows,[14,6,24,18,12,12,22,16,16,14,16,18,16,16,24,10]);
 }
@@ -1514,7 +1582,7 @@ ${lines}
 รวมรายได้: ${totInc.toLocaleString()} บาท${totRent?'\nหักค่าเช่ารถ: '+totRent.toLocaleString()+' บาท':''}
 หัก ณ ที่จ่าย ${+(tax*100).toFixed(2)}%: ${taxAmt.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท
 รับสุทธิ: ${(totInc-totRent-taxAmt).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท
-ยอดรวมรายได้สะสมตั้งแต่ต้นเดือน (${thDate(m0)} - ${thDate(m1)}): ${monthTot.toLocaleString()} บาท
+ยอดรวมรายได้สะสมตั้งแต่ต้นเดือน (${thDate(m0)} - ${thDate(m1)}): ${monthTot.toLocaleString()} บาท${incentiveFor(m0,m1).map(i=>'\n'+incLabel(i)+': '+i.amt.toLocaleString()+' บาท (รวมอยู่ในไฟล์ Excel)').join('')}
 
 ขอแสดงความนับถือ
 ${driver}`;
@@ -1649,7 +1717,8 @@ function loadCfg(){
   document.getElementById('srent').value=CFG.rent||'';
   document.getElementById('sfuel').value=CFG.fuel||'r5';
   document.getElementById('stax').value=CFG.tax||'1';
-  updFuelPrev();showStorage();
+  updFuelPrev();showStorage();incRender();
+  { const d=new Date(); const e=document.getElementById('incm'); if(e&&!e.value)e.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 }
 function updFuelPrev(){
   const col=document.getElementById('sfuel').value;
