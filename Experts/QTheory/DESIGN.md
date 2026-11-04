@@ -173,3 +173,38 @@ Experts/QTheory/
 6. Runner ปิดเมื่อชน TP ไกล, SL หน้าทุน, หรือ DD guard
 
 Inputs ใหม่: `InpKeepRunner`(true), `InpRunnerTPDist`(30), `InpBEActivation`(8), `InpBELockBuffer`(0.3)
+
+---
+
+## 10. การตัดสินใจรอบที่ 3 (implement แล้ว)
+
+### 10.1 ระยะ tolerance สมมาตร BUY/SELL
+- วัดระยะจาก **mid ของชุดที่ตัดสินทิศ** ไม่ใช่ Raw mid อย่างเดียว
+- โหมด Raw+Hidden ต้องตรงกัน: ทิศตรงกันเฉพาะ SELL = block+50..+80 และ BUY = block+0..+30 (ช่วง +30..+50 Raw/Hidden ขัดกัน -> ไม่เทรด) ระยะที่ใช้ = **mid ที่ใกล้ราคากว่า** (SELL วัดจาก Raw block+50, BUY วัดจาก Hidden block+30)
+- default `InpMidTolerance=12`: SELL เปิดที่ block+50..+62, BUY เปิดที่ block+18..+30 (สมมาตร) — เดิม BUY เกิดไม่ได้เลย
+- โหมดไม่บังคับตรงกัน/ใช้ชุดเดียว: วัดจาก mid ของชุดที่ให้ทิศนั้นเอง
+- tolerance > 30 (= block/2 - shift) ไม่ขยายโซนเพิ่ม เพราะถูกจำกัดด้วยเงื่อนไข Raw/Hidden ตรงกัน (OnInit เตือน)
+- Self-test: 4460 -> SELL, **4420 -> BUY**, 4440 -> NONE (ขัดกัน)
+
+### 10.2 ตัวกรอง H/L ของวัน (`InpDayEdgeBuffer` default 5 $)
+- ราคาต้องอยู่ใน [DayLow, DayHigh]
+- **SELL ห้ามเมื่อราคาห่างจาก Low วัน < 5 $; BUY ห้ามเมื่อห่างจาก High วัน < 5 $** (ตัดสินหลังรู้ทิศ ไม่ใช่บล็อกทั้งสองขอบเหมือนเดิม)
+- default เดิม 0 ทำให้ตัวกรองไม่ทำงานจริง -> เปลี่ยนเป็น 5 และ OnInit เตือนถ้าตั้ง 0
+- ผลข้างเคียง: ต้นวันที่ range ของวัน < 5 $ ทั้งสองทิศจะถูกบล็อกจนกว่า range จะขยาย
+- Self-test ครอบคลุมทั้งบล็อกและผ่าน
+
+### 10.3 `InpMaxHoldMin` default 1440 (24 ชม.)
+- เมื่อรอบ (นับจากวาง ladder) ถือครบเวลา: ลบ pending, ปิด non-runner ทั้งหมดของรอบ, ปิด Runner ที่ **ยังไม่ BE** ด้วย
+- **เก็บเฉพาะ Runner ที่ SL ย้ายไป breakeven แล้ว** (BUY: SL >= entry, SELL: SL <= entry)
+
+### 10.4 TP ของ Runner = base ถัดไป (`InpRunnerUseNextBase=true`)
+- BUY runner: TP ที่ base **..75** ถัดไปเหนือ entry | SELL runner: TP ที่ base **..25** ถัดไปใต้ entry (ตัวอย่าง 4460: BUY 4475, SELL 4425) ใช้ lattice Raw ตามโน้ต "Buy ต้อง base 75 / Sell ต้อง base 25"
+- ถ้า base นั้นใกล้ entry กว่า stops level -> fallback เป็น `InpRunnerTPDist` (30 $) พร้อม log
+- ผลคือ Runner มี TP ใกล้ได้ถึงไม่กี่ $ (ถ้า entry อยู่ใกล้ base) ซึ่งอาจน้อยกว่า `InpBEActivation` — Runner จะปิดด้วย TP ก่อนถึงจุด BE
+
+### 10.5 หมายเหตุที่เหลือ
+- ต้องใช้บัญชี **Hedging** (OnInit ปฏิเสธบัญชี netting)
+- **ยังไม่ได้ compile / ยังไม่ได้ backtest** (เขียนโดยไม่มี MetaEditor) ต้อง compile และดู error ก่อนใช้
+- รอบที่จบด้วย basket TP (มีไม้ non-runner ชน TP) จะหยุดถูกนับ max hold; ไม้ non-runner ที่เหลือถือด้วย TP/SL ของตัวเอง
+- ทดสอบด้วย real ticks ตาม test plan ข้อ 7
+

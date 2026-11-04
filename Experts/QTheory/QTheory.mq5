@@ -31,7 +31,7 @@ input double   InpBlockSize        = 100.0;            // ขนาด block (�
 input double   InpHiddenShift      = 20.0;             // Hidden = Raw - shift
 input double   InpMidTolerance     = 12.0;             // ระยะจาก mid ที่ยอมรับ ($)
 input bool     InpUseDayRange      = true;             // ราคาต้องอยู่ใน H/L ของวัน
-input double   InpDayEdgeBuffer    = 0.0;              // กันขอบ H/L ($)
+input double   InpDayEdgeBuffer    = 5.0;              // กันขอบ H/L วัน ($): SELL ห้ามใกล้ Low, BUY ห้ามใกล้ High (0 = ปิด)
 input int      InpSignalIntervalSec= 10;               // ตรวจสัญญาณทุก N วินาที
 
 //--- Exit
@@ -41,14 +41,14 @@ input double   InpTPFixedDist      = 5.0;              // TP fixed ($) สำห
 input double   InpTPMinDist        = 1.0;              // ระยะ TP ขั้นต่ำ ($) สำหรับ mode 2
 input double   InpSLBufferBeyondQ  = 10.0;             // SL ร่วม = Q ไกลสุด + buffer ($)
 input int      InpPendingExpireMin = 240;              // pending หมดอายุ (นาที, 0 = ไม่หมด)
-input int      InpMaxHoldMin       = 0;                // ปิดไม้ non-runner ของรอบหลัง N นาที (0 = ปิดใช้)
+input int      InpMaxHoldMin       = 1440;             // ปิดตะกร้าหลัง N นาที (เก็บเฉพาะ Runner ที่ BE แล้ว, 0 = ปิดใช้)
 input int      InpCooldownMin      = 15;               // พักหลังจบรอบ (นาที)
 
 //--- Runner
 input group "=== Runner / Breakeven ==="
 input bool     InpKeepRunner       = true;             // เก็บ Runner 1 ไม้ต่อฝั่ง
-input double   InpRunnerTPDist      = 30.0;            // TP ไกลของ Runner ($)
-input bool     InpRunnerUseNextBase = false;           // true = TP Runner ที่ base ถัดไป (ไกลกว่า BEActivation)
+input double   InpRunnerTPDist      = 30.0;            // TP ไกลของ Runner ($) ใช้เมื่อปิด NextBase หรือ base ใกล้กว่า stops level
+input bool     InpRunnerUseNextBase = true;            // true = TP Runner: BUY ที่ ..75 ถัดไป / SELL ที่ ..25 ถัดไป
 input double   InpBEActivation     = 8.0;              // กำไร Runner >= นี้ ($) -> ตั้ง BE
 input double   InpBELockBuffer     = 0.3;              // BE = entry +/- buffer ($)
 
@@ -81,6 +81,8 @@ input bool     InpResetHalt        = false;            // ล้างสถา�
 #define QT_MAX_TP_ROUNDS    50
 #define QT_SELFTEST_EPS     0.0001
 #define QT_BE_RETRY_SEC     1
+#define QT_RUNNER_BUY_PHASE  0.75   // Runner BUY: TP ที่ base ..75 (สัดส่วนของ block)
+#define QT_RUNNER_SELL_PHASE 0.25   // Runner SELL: TP ที่ base ..25 (สัดส่วนของ block)
 
 //--- Global state
 double      g_sellOff[];
@@ -363,14 +365,20 @@ void EndRound(const string why, const bool cooldown)
 //+------------------------------------------------------------------+
 double RunnerTP(const ENUM_SIGNAL side, const double entry)
 {
+   bool   isSell = (side == SIGNAL_SELL);
+   double stops  = Utils::StopsDistance(_Symbol);
    if(InpRunnerUseNextBase)
    {
-      double origin = InpUseRaw ? 0.0 : -InpHiddenShift;
-      return Strategy::NextBase(entry, side, D(InpBEActivation) + D(InpBELockBuffer),
-                                InpBlockSize, origin);
+      double phase = InpBlockSize * (isSell ? QT_RUNNER_SELL_PHASE : QT_RUNNER_BUY_PHASE);
+      double tp    = Strategy::NextPhaseBase(entry, side, phase, InpBlockSize);
+      double dist  = isSell ? (entry - tp) : (tp - entry);
+      if(tp > 0.0 && dist > 0.0 && dist >= stops)
+         return tp;
+      Logger::Warn(StringFormat("RunnerTP: next base %.5f too close to entry %.5f (stops=%.5f) -> fallback to fixed dist",
+                                tp, entry, stops));
    }
    double d = D(InpRunnerTPDist);
-   return Utils::NormalizePrice(side == SIGNAL_SELL ? entry - d : entry + d);
+   return Utils::NormalizePrice(isSell ? entry - d : entry + d);
 }
 
 //+------------------------------------------------------------------+
@@ -516,6 +524,40 @@ void TryNewRound()
 }
 
 //+------------------------------------------------------------------+
+//| หมดเวลาถือ: ลบ pending + ปิดไม้ของรอบ g_round ยกเว้น Runner ที่ BE แล้ว  |
+//| (Runner ที่ยังไม่ BE ถูกปิดด้วย)                                     |
+//+------------------------------------------------------------------+
+void CloseBasketOnMaxHold()
+{
+   DeleteAllPendings("max hold");
+   double tick = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong t = PositionGetTicket(i);
+      if(t == 0) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      long r; int idx; bool isRunner;
+      if(!ParseComment(PositionGetString(POSITION_COMMENT), r, idx, isRunner)) continue;
+      if(r != g_round) continue;
+      if(isRunner)
+      {
+         bool   isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+         double open  = PositionGetDouble(POSITION_PRICE_OPEN);
+         double sl    = PositionGetDouble(POSITION_SL);
+         bool atBE = isBuy ? (sl > 0.0 && sl >= open - tick * 0.5)
+                           : (sl > 0.0 && sl <= open + tick * 0.5);
+         if(atBE)
+         {
+            Logger::Info(StringFormat("Max hold: keep runner #%I64u (already at breakeven)", t));
+            continue;
+         }
+      }
+      ClosePosition(t, "max hold");
+   }
+}
+
+//+------------------------------------------------------------------+
 //| ดูแลรอบปัจจุบัน: ARMED -> ACTIVE -> CLOSED                         |
 //+------------------------------------------------------------------+
 void ManageRound()
@@ -572,17 +614,7 @@ void ManageRound()
       DeleteAllPendings("expired");
    if(InpMaxHoldMin > 0 && (now - g_roundTime) >= InpMaxHoldMin * QT_SECONDS_PER_MINUTE)
    {
-      DeleteAllPendings("max hold");
-      for(int i = PositionsTotal() - 1; i >= 0; i--)
-      {
-         ulong t = PositionGetTicket(i);
-         if(t == 0) continue;
-         if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
-         if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-         long r; int idx; bool isRunner;
-         if(!ParseComment(PositionGetString(POSITION_COMMENT), r, idx, isRunner)) continue;
-         if(r == g_round && !isRunner) ClosePosition(t, "max hold");
-      }
+      CloseBasketOnMaxHold();
       EndRound("max hold reached", true);
       return;
    }
@@ -760,10 +792,35 @@ bool SelfCheck()
    if(Strategy::Evaluate(P0, 4440.0, 4495.0, sp) != SIGNAL_SELL)
    { Logger::Error("SelfCheck: 4460 (L=4440,H=4495) should be SELL"); ok = false; }
 
+   // BUY: 4420 -> Raw mid 4450 (BUY), Hidden mid 4430 (BUY), ระยะจาก Hidden = 10 <= 12 -> BUY
+   const double PB = 4420.0;
+   if(Strategy::Evaluate(PB, 4400.0, 4500.0, sp) != SIGNAL_BUY)
+   { Logger::Error("SelfCheck: 4420 (L=4400,H=4500) should be BUY"); ok = false; }
+   // Raw/Hidden ไม่ตรงกัน (4440: Raw BUY, Hidden SELL) -> ไม่มีสัญญาณ
+   if(Strategy::Evaluate(4440.0, 4400.0, 4500.0, sp) != SIGNAL_NONE)
+   { Logger::Error("SelfCheck: 4440 (Raw/Hidden disagree) should be NONE"); ok = false; }
+   // Day edge 5$: SELL ใกล้ Low วัน / BUY ใกล้ High วัน ถูกบล็อก, ระยะห่างพอต้องผ่าน
+   sp.dayEdge = 5.0;
+   if(Strategy::Evaluate(P0, 4458.0, 4495.0, sp) != SIGNAL_NONE)
+   { Logger::Error("SelfCheck: SELL within 5 of day low should be blocked"); ok = false; }
+   if(Strategy::Evaluate(PB, 4400.0, 4422.0, sp) != SIGNAL_NONE)
+   { Logger::Error("SelfCheck: BUY within 5 of day high should be blocked"); ok = false; }
+   if(Strategy::Evaluate(P0, 4440.0, 4495.0, sp) != SIGNAL_SELL)
+   { Logger::Error("SelfCheck: SELL far from day low should pass"); ok = false; }
+   if(Strategy::Evaluate(PB, 4400.0, 4500.0, sp) != SIGNAL_BUY)
+   { Logger::Error("SelfCheck: BUY far from day high should pass"); ok = false; }
+   sp.dayEdge = 0.0;
+
+   // Runner TP: BUY 4460 -> 4475, SELL 4460 -> 4425
+   if(MathAbs(Strategy::NextPhaseBase(P0, SIGNAL_BUY, 75.0, 100.0) - 4475.0) > QT_SELFTEST_EPS)
+   { Logger::Error("SelfCheck: runner BUY next 75 base != 4475"); ok = false; }
+   if(MathAbs(Strategy::NextPhaseBase(P0, SIGNAL_SELL, 25.0, 100.0) - 4425.0) > QT_SELFTEST_EPS)
+   { Logger::Error("SelfCheck: runner SELL next 25 base != 4425"); ok = false; }
+
    double sl = Strategy::SharedSL(SIGNAL_SELL, P0, so, UNIT, 10.0);
    if(MathAbs(sl - 4491.0) > QT_SELFTEST_EPS) { Logger::Error("SelfCheck: sell sharedSL != 4491"); ok = false; }
 
-   Logger::Info(ok ? "SelfCheck PASSED (4460 example)" : "SelfCheck FAILED");
+   Logger::Info(ok ? "SelfCheck PASSED (4460 SELL, 4420 BUY, day edge, runner base)" : "SelfCheck FAILED");
    return ok;
 }
 
@@ -801,8 +858,19 @@ int OnInit()
    }
    if(InpBEActivation <= InpBELockBuffer)
       Logger::Warn("InpBEActivation <= InpBELockBuffer: breakeven lock may be unreachable");
-   if(InpUseRaw && InpUseHidden && InpRequireBothSets && InpMidTolerance <= InpHiddenShift)
-      Logger::Warn("Raw+Hidden must agree and MidTolerance <= HiddenShift: BUY signals can never occur (need tolerance > shift)");
+   if(InpUseRaw && InpUseHidden && InpRequireBothSets)
+   {
+      double zone = InpBlockSize / 2.0 - InpHiddenShift;   // โซนกว้างสุดที่ Raw+Hidden ตรงกัน (30 เมื่อ block=100, shift=20)
+      if(InpMidTolerance > zone)
+         Logger::Warn(StringFormat("MidTolerance %.1f > agree-zone %.1f: capped by Raw/Hidden agreement, BUY/SELL stay symmetric",
+                                   InpMidTolerance, zone));
+      double reach = MathMin(InpMidTolerance, zone);
+      Logger::Info(StringFormat("Signal zones: SELL block+%.1f..+%.1f, BUY block+%.1f..+%.1f",
+                                InpBlockSize / 2.0, InpBlockSize / 2.0 + reach,
+                                zone - reach, zone));
+   }
+   if(InpUseDayRange && InpDayEdgeBuffer <= 0.0)
+      Logger::Warn("InpDayEdgeBuffer = 0: day H/L edge filter disabled (only in-range check)");
 
    RiskManager::Init(_Symbol, InpMagic, InpResetHalt);
    if(RiskManager::IsHalted())

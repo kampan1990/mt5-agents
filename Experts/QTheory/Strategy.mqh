@@ -62,6 +62,11 @@ namespace Strategy
    }
 
    //--- ประเมินสัญญาณจากราคาล้วน ๆ (ไม่แตะ global)
+   //    ระยะจาก mid วัดจาก mid ของชุดที่ตัดสินทิศ:
+   //      - Raw+Hidden ต้องตรงกัน -> ใช้ mid ที่ใกล้ราคากว่า (SELL: Raw=block+50, BUY: Hidden=block+30)
+   //        ทำให้ BUY/SELL สมมาตร (โซนกว้าง tolerance เท่ากัน)
+   //      - ไม่บังคับตรงกัน / ใช้ชุดเดียว -> วัดจาก mid ของชุดที่ให้ทิศนั้น
+   //    Day H/L: ราคาต้องอยู่ในช่วง; SELL ห้ามอยู่ใกล้ Low วัน < dayEdge, BUY ห้ามอยู่ใกล้ High วัน < dayEdge
    //    price = ราคา | dayLow/dayHigh = L/H ของวัน | p = พารามิเตอร์ | คืน: SIGNAL_*
    ENUM_SIGNAL Evaluate(const double price, const double dayLow, const double dayHigh,
                         const SSignalParams &p)
@@ -72,27 +77,46 @@ namespace Strategy
       if(p.useDayRange)
       {
          if(dayLow <= 0.0 || dayHigh <= 0.0) return SIGNAL_NONE;
-         if(price < dayLow + p.dayEdge - QT_EPS) return SIGNAL_NONE;
-         if(price > dayHigh - p.dayEdge + QT_EPS) return SIGNAL_NONE;
+         if(price < dayLow - QT_EPS || price > dayHigh + QT_EPS) return SIGNAL_NONE;
       }
 
       double rawMid = RawMid(price, p.blockSize);
       double hidMid = HiddenMid(price, p.blockSize, p.hiddenShift);
       ENUM_SIGNAL rawSide = SideOf(price, rawMid);
       ENUM_SIGNAL hidSide = SideOf(price, hidMid);
-      bool nearRaw = (MathAbs(price - rawMid) <= p.midTolerance + QT_EPS);
-      bool nearHid = (MathAbs(price - hidMid) <= p.midTolerance + QT_EPS);
+      double dRaw = MathAbs(price - rawMid);
+      double dHid = MathAbs(price - hidMid);
+      double lim  = p.midTolerance + QT_EPS;
 
+      ENUM_SIGNAL sig = SIGNAL_NONE;
       if(p.useRaw && p.useHidden)
       {
          if(p.requireBoth)
-            return (rawSide == hidSide && nearRaw) ? rawSide : SIGNAL_NONE;
-         if(nearRaw) return rawSide;
-         if(nearHid) return hidSide;
-         return SIGNAL_NONE;
+         {
+            if(rawSide == hidSide && MathMin(dRaw, dHid) <= lim) sig = rawSide;
+         }
+         else
+         {
+            if(dRaw <= lim)      sig = rawSide;
+            else if(dHid <= lim) sig = hidSide;
+         }
       }
-      if(p.useRaw)    return nearRaw ? rawSide : SIGNAL_NONE;
-      return nearHid ? hidSide : SIGNAL_NONE;
+      else if(p.useRaw)
+      {
+         if(dRaw <= lim) sig = rawSide;
+      }
+      else
+      {
+         if(dHid <= lim) sig = hidSide;
+      }
+      if(sig == SIGNAL_NONE) return SIGNAL_NONE;
+
+      if(p.useDayRange && p.dayEdge > 0.0)
+      {
+         if(sig == SIGNAL_SELL && (price - dayLow) < p.dayEdge - QT_EPS) return SIGNAL_NONE;
+         if(sig == SIGNAL_BUY  && (dayHigh - price) < p.dayEdge - QT_EPS) return SIGNAL_NONE;
+      }
+      return sig;
    }
 
    //--- สร้างราคา ladder: Sell = P0 + off, Buy = P0 - off (off x unit)
@@ -135,6 +159,22 @@ namespace Strategy
       }
       double k2 = MathCeil((entry + minDist - origin) / step - QT_EPS);
       return Utils::NormalizePrice(origin + k2 * step);
+   }
+
+   //--- base ถัดไปแบบมี phase: ระดับ phase + k*period ที่อยู่ "เลย" entry ในทิศกำไร (เข้มงวด ไม่เท่า entry)
+   //    BUY: ระดับแรกที่สูงกว่า entry | SELL: ระดับแรกที่ต่ำกว่า entry
+   //    เช่น BUY phase=75, period=100, entry=4460 -> 4475 ; SELL phase=25, entry=4460 -> 4425
+   double NextPhaseBase(const double entry, const ENUM_SIGNAL side, const double phase,
+                        const double period)
+   {
+      if(period <= 0.0) return 0.0;
+      if(side == SIGNAL_SELL)
+      {
+         double k = MathCeil((entry - phase) / period - QT_EPS) - 1.0;
+         return Utils::NormalizePrice(phase + k * period);
+      }
+      double k2 = MathFloor((entry - phase) / period + QT_EPS) + 1.0;
+      return Utils::NormalizePrice(phase + k2 * period);
    }
 
    //--- TP ปกติของแต่ละ level ตาม mode (fixedDist/minDist เป็นหน่วยราคาแล้ว)
