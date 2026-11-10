@@ -144,14 +144,14 @@ input:checked+.tgt:before{transform:translateX(20px)}
               <option value="7">7 จุด</option><option value="8">8 จุด</option>
             </select>
           </div>
-          <div class="fg"><label>🛣️ ระยะกิโล</label><input type="number" id="fdist" placeholder="0" min="0" step="0.1" inputmode="decimal" oninput="updPreview()"></div>
+          <div class="fg"><label>🛣️ ระยะกิโล</label><input type="number" id="fdist" placeholder="0" min="0" step="any" inputmode="decimal" oninput="updPreview()"></div>
         </div>
         <div class="tgg" style="padding:0;margin-bottom:16px;border:none">
-          <div><div class="tgl-l">🚚 วิ่งต่างจังหวัด</div><div class="tgl-d">บวกเพิ่ม 500 บาท (กทม./ปริมณฑล ใช้ตามเรท) · จุดที่ 7 เป็นต้นไป +100 บาท/จุดอัตโนมัติ</div></div>
+          <div><div class="tgl-l">🚚 วิ่งต่างจังหวัด</div><div class="tgl-d" id="upDesc">บวกเพิ่ม 500 บาท (กทม./ปริมณฑล ใช้ตามเรท) · จุดที่ 7 เป็นต้นไป +100 บาท/จุดอัตโนมัติ</div></div>
           <label class="tgl"><input type="checkbox" id="fup" onchange="updPreview()"><span class="tgt"></span></label>
         </div>
-        <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
-        <div class="fg"><label>🚗 ค่าเช่ารถ (บาท/วัน)</label><input type="number" id="frent" placeholder="0" min="0" inputmode="numeric" oninput="updPreview()"></div>
+        <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" step="any" inputmode="decimal" oninput="updPreview()"></div>
+        <div class="fg"><label>🚗 ค่าเช่ารถ (บาท/วัน)</label><input type="number" id="frent" placeholder="0" min="0" step="any" inputmode="decimal" oninput="updPreview()"></div>
         <div class="fg" id="tp-wrap">
           <label>📷 รูปบิลค่าทางด่วน (แนบในอีเมล์อัตโนมัติ)</label>
           <div id="tpgrid" class="pg">
@@ -161,7 +161,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
         </div>
       </div></div>
       <div class="card">
-        <div class="ct">🏢 ชั้นที่ยกขึ้น/บ้าน (ชั้น 3+ = 100฿/ชั้น, หากไม่มียกกด "+" แล้วใส่ 0)</div>
+        <div class="ct" id="flDesc">🏢 ชั้นที่ยกขึ้น/บ้าน (ชั้น 3+ = 100฿/ชั้น, หากไม่มียกกด "+" แล้วใส่ 0)</div>
         <div id="flist" style="padding:0 16px 8px"></div>
         <div style="padding:0 16px 16px"><button type="button" class="btn btn-o btn-sm" onclick="addFloor()">+ เพิ่มรายการ</button></div>
       </div>
@@ -257,7 +257,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
       <div class="fg"><label>ชื่อพนักงานขับรถ</label><input type="text" id="sname" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fg"><label>📧 อีเมล์หัวหน้า (ผู้รับรายงาน)</label><input type="email" id="sboss" placeholder="boss@example.com"></div>
       <div class="fg"><label>🚚 ชื่อรถ/สาย (แสดงในข้อความรายงาน)</label><input type="text" id="struck" placeholder="Nitori Truck No.2"></div>
-      <div class="fg"><label>🚗 ค่าเช่ารถต่อวัน (บาท) — ใส่เพื่อหักจากรายได้อัตโนมัติ</label><input type="number" id="srent" placeholder="0" min="0" inputmode="numeric"></div>
+      <div class="fg"><label>🚗 ค่าเช่ารถต่อวัน (บาท) — ใส่เพื่อหักจากรายได้อัตโนมัติ</label><input type="number" id="srent" placeholder="0" min="0" step="any" inputmode="decimal"></div>
     </div>
   </div>
   <div class="card">
@@ -278,8 +278,37 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div class="card">
+    <div class="ct">💵 ตารางค่าเที่ยว (เหมาจ่ายตามระยะทาง)</div>
+    <div class="fs">
+      <p class="mu" style="font-size:12px;margin-bottom:10px">แก้ค่าเที่ยวแล้วกดบันทึก ระบบคำนวณใหม่ให้ทุกงานย้อนหลังทั้งหมดทันที (เหมือนราคาน้ำมัน) ใส่ทศนิยมได้ ระยะทางที่เป็นทศนิยมปัดขึ้นเป็นกิโลถัดไป</p>
+      <div class="fg"><label>แก้ไขเรทของระดับราคาน้ำมัน</label>
+        <select id="rtier" onchange="rtRender()">
+          <option value="r0">24.01 – 27.00</option><option value="r1">27.01 – 30.00</option><option value="r2">30.01 – 33.00</option>
+          <option value="r3">33.01 – 36.00</option><option value="r4">36.01 – 39.00</option><option value="r5">39.01 – 42.00</option>
+        </select>
+      </div>
+      <div id="rtbl" style="max-height:340px;overflow:auto;border:1px solid var(--bdr);border-radius:8px"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-g btn-sm" onclick="rtSave()">💾 บันทึกค่าเที่ยว</button>
+        <button class="btn btn-o btn-sm" onclick="rtReset()">↩︎ คืนค่าเริ่มต้น</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ct">📌 ค่าคงที่ (แก้แล้วคำนวณย้อนหลังทุกงาน)</div>
+    <div class="fs">
+      <div class="fg"><label>ค่ายกของต่อชั้น (ชั้น 3 ขึ้นไป) บาท</label><input type="number" id="sfloor" step="any" min="0" inputmode="decimal" placeholder="100"></div>
+      <div class="fg"><label>ค่าวิ่งต่างจังหวัด (บาท/วัน)</label><input type="number" id="sup" step="any" min="0" inputmode="decimal" placeholder="500"></div>
+      <div class="r2">
+        <div class="fg"><label>นับจุดเพิ่มตั้งแต่จุดที่</label><input type="number" id="sptmin" step="1" min="1" inputmode="numeric" placeholder="7"></div>
+        <div class="fg"><label>ค่าจุดเพิ่ม (บาท/จุด)</label><input type="number" id="sptfee" step="any" min="0" inputmode="decimal" placeholder="100"></div>
+      </div>
+      <p class="mu" style="font-size:12px">กดปุ่ม "บันทึกการตั้งค่า" ด้านล่างเพื่อบันทึก</p>
+    </div>
+  </div>
+  <div class="card">
     <div class="ct">🧾 ภาษี</div>
-    <div class="fs"><div class="fg"><label>หัก ณ ที่จ่าย (%)</label><input type="number" id="stax" value="1" min="0" max="100" step="0.5"></div></div>
+    <div class="fs"><div class="fg"><label>หัก ณ ที่จ่าย (%)</label><input type="number" id="stax" value="1" min="0" max="100" step="any" inputmode="decimal"></div></div>
   </div>
   <div class="card">
     <div class="ct">📧 ส่งอีเมล์ให้หัวหน้าอัตโนมัติ (กดครั้งเดียว)</div>
@@ -326,7 +355,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.5 (10 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.6 (10 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -374,7 +403,7 @@ async function initPhotos(){
 const DB = {
   getDeliveries(){ try{return JSON.parse(localStorage.getItem('nitori_del')||'[]')}catch{return[]} },
   saveDeliveries(d){ localStorage.setItem('nitori_del',JSON.stringify(d)) },
-  getSettings(){ try{return JSON.parse(localStorage.getItem('nitori_cfg')||'{}')}catch{return{}} },
+  getSettings(){ try{const c=JSON.parse(localStorage.getItem('nitori_cfg')||'{}')||{};applyFees(c);return c}catch{return{}} },
   saveSettings(s){ localStorage.setItem('nitori_cfg',JSON.stringify(s)) },
   getPhotos(id){ return PHC['ph_'+id]||[] },
   savePhotos(id,ps){ photoSet('ph_'+id,ps) },
@@ -416,19 +445,36 @@ const NT=[
 ];
 
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const UP_FEE=500;      // วิ่งต่างจังหวัด บวกเพิ่มต่อวัน
-const PT7_FEE=100;     // จุดที่ 7 เป็นต้นไป จุดละ 100 บาท
-const PT7_MIN=7;
+/* ค่าคงที่ ตั้งค่าได้ที่หน้าตั้งค่า (ทศนิยมได้) แล้วคำนวณใหม่ย้อนหลังทุกงาน */
+let UP_FEE=500,PT7_FEE=100,PT7_MIN=7,FLOOR_FEE=100;
+const r2=v=>Math.round((+v||0)*100)/100;
+function applyFees(c){
+  const n=(v,d)=>{const x=parseFloat(v);return isNaN(x)?d:x;};
+  c=c||{};
+  UP_FEE=n(c.upFee,500);PT7_FEE=n(c.ptFee,100);PT7_MIN=Math.max(1,Math.round(n(c.ptMin,7)));FLOOR_FEE=n(c.floorFee,100);
+  try{
+    const a=document.getElementById('upDesc');if(a)a.textContent=`บวกเพิ่ม ${UP_FEE} บาท (กทม./ปริมณฑล ใช้ตามเรท) · จุดที่ ${PT7_MIN} เป็นต้นไป +${PT7_FEE} บาท/จุดอัตโนมัติ`;
+    const b=document.getElementById('flDesc');if(b)b.textContent=`🏢 ชั้นที่ยกขึ้น/บ้าน (ชั้น 3+ = ${FLOOR_FEE}฿/ชั้น, หากไม่มียกกด "+" แล้วใส่ 0)`;
+  }catch(e){}
+}
 let CFG = {};
 let pendPics = [];
 let pendTollPics = [];
 let hYear = new Date().getFullYear();
 let hMo = new Date().getMonth();
 
+/* ตารางค่าเที่ยว: ใช้ค่าที่แก้ในหน้าตั้งค่า ถ้ายังไม่แก้ใช้ค่าเริ่มต้น NT — คำนวณสดทุกครั้ง จึงมีผลย้อนหลังทุกงาน */
+let NTC=null;
+function getNT(){
+  if(NTC)return NTC;
+  try{const a=JSON.parse(localStorage.getItem('nitori_nt')||'null');if(Array.isArray(a)&&a.length===NT.length)NTC=a;}catch(e){}
+  return NTC||NT;
+}
 function getRate(dist){
   const col = CFG.fuel||'r5';
-  const row = NT.find(r=>dist>=r.mn&&dist<=r.mx);
-  return row?row[col]:0;
+  const d = Math.ceil((parseFloat(dist)||0)-1e-9);    // ระยะทศนิยม ปัดขึ้นเป็นกิโลถัดไป (20.5 → ช่วง 21-40)
+  const row = getNT().find(r=>d>=r.mn&&d<=r.mx);
+  return row?(parseFloat(row[col])||0):0;
 }
 /* ป้ายบอกโบนัสของวันนั้น (ใช้ในสรุปงวด) */
 function bonusTags(inc,html){
@@ -439,7 +485,7 @@ function bonusTags(inc,html){
   return html?t.map(x=>`<span style="display:inline-block;font-size:11px;background:#eef;border-radius:4px;padding:1px 5px;margin:2px 3px 0 0;color:#335">${x}</span>`).join(''):t.join(' · ');
 }
 function floorInc(fds){
-  return (fds||[]).reduce((s,f)=>{const fl=parseInt(f.floor)||0;const c=parseInt(f.count)||1;return fl>=3?s+(fl-2)*100*c:s},0);
+  return (fds||[]).reduce((s,f)=>{const fl=parseInt(f.floor)||0;const c=parseInt(f.count)||1;return fl>=3?s+(fl-2)*FLOOR_FEE*c:s},0);
 }
 function calcInc(d){
   if(d.is_holiday)return{km:0,fl:0,tl:0,up:0,pt:0,tot:0,rent:0,net:0};
@@ -449,8 +495,8 @@ function calcInc(d){
   const rent=parseFloat(d.rent_fee)||0;
   const up=d.upcountry?UP_FEE:0;
   const pt=Math.max(0,(parseInt(d.point_count)||0)-PT7_MIN+1)*PT7_FEE;
-  const tot=km+fl+tl+up+pt;
-  return{km,fl,tl,up,pt,tot,rent,net:tot-rent};
+  const tot=r2(km+fl+tl+up+pt);
+  return{km:r2(km),fl:r2(fl),tl:r2(tl),up:r2(up),pt:r2(pt),tot,rent:r2(rent),net:r2(tot-rent)};
 }
 
 /* ── Toast ── */
@@ -707,7 +753,7 @@ function showModal(id){
   if(!d)return;
   const inc=calcInc(d);
   const photos=DB.getPhotos(id);
-  const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น ${f.floor} × ${f.count||1} ครั้ง = ${(f.floor-2)*100*(f.count||1)} ฿`).join('<br>')||'-';
+  const flTxt=(d.floor_deliveries||[]).map(f=>`ชั้น ${f.floor} × ${f.count||1} ครั้ง = ${r2((f.floor-2)*FLOOR_FEE*(f.count||1))} ฿`).join('<br>')||'-';
   document.getElementById('mc').innerHTML=d.is_holiday?`
     <div class="mt">${fmtTH(d.date)}</div>
     <div style="text-align:center;padding:24px"><span style="font-size:48px">🏖️</span><p>วันหยุด</p></div>
@@ -1470,7 +1516,7 @@ function makeXlsx(rows,widths){
   const sheetRows=rows.map((r,ri)=>'<row r="'+(ri+1)+'">'+r.map((c,ci)=>{
     if(c===null||c===undefined||c==='')return'';
     const bold=c&&typeof c==='object'&&c.b, v=c&&typeof c==='object'?c.v:c, ref=xlCol(ci)+(ri+1);
-    if(typeof v==='number')return'<c r="'+ref+'" s="'+(bold?3:2)+'"><v>'+v+'</v></c>';
+    if(typeof v==='number')return'<c r="'+ref+'" s="'+(bold?3:2)+'"><v>'+(Math.round(v*100)/100)+'</v></c>';
     return'<c r="'+ref+'" t="inlineStr"'+(bold?' s="1"':'')+'><is><t xml:space="preserve">'+x(v)+'</t></is></c>';
   }).join('')+'</row>').join('');
   const cols='<cols>'+widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
@@ -1744,6 +1790,11 @@ function loadCfg(){
   document.getElementById('sname').value=CFG.name||'';
   document.getElementById('sboss').value=CFG.boss||'';
   document.getElementById('struck').value=CFG.truck||'';
+  document.getElementById('sfloor').value=CFG.floorFee!=null?CFG.floorFee:'';
+  document.getElementById('sup').value=CFG.upFee!=null?CFG.upFee:'';
+  document.getElementById('sptmin').value=CFG.ptMin!=null?CFG.ptMin:'';
+  document.getElementById('sptfee').value=CFG.ptFee!=null?CFG.ptFee:'';
+  rtInit();document.getElementById('rtier').value=CFG.fuel||'r5';rtRender();
   document.getElementById('smurl').value=CFG.mailUrl||'';
   document.getElementById('smtok').value=CFG.mailToken||'';
   document.getElementById('srent').value=CFG.rent||'';
@@ -1754,22 +1805,44 @@ function loadCfg(){
 }
 function updFuelPrev(){
   const col=document.getElementById('sfuel').value;
-  const smp=[NT[0],NT[8],NT[9],NT[12]];
+  const NTt=getNT();const smp=[NTt[0],NTt[8],NTt[9],NTt[12]];
   document.getElementById('fprev').innerHTML=smp.map(r=>`${r.mn}-${r.mx} กม. = <strong>${r[col].toLocaleString()} ฿</strong>`).join(' · ');
+}
+let RTD=null;
+function rtInit(){RTD=JSON.parse(JSON.stringify(getNT()));}
+function rtRender(){
+  const el=document.getElementById('rtbl');if(!el)return;
+  if(!RTD)rtInit();
+  const t=document.getElementById('rtier').value||'r5';
+  el.innerHTML=RTD.map((r,i)=>`<div class="ir"><span class="lbl">${r.mn}–${r.mx} กม.</span><span class="val"><input type="number" step="any" min="0" inputmode="decimal" value="${r[t]}" style="width:120px;text-align:right" onchange="rtSet(${i},'${t}',this.value)"></span></div>`).join('');
+}
+function rtSet(i,t,v){const x=parseFloat(v);if(!isNaN(x)&&x>=0)RTD[i][t]=x;}
+function rtSave(){
+  try{localStorage.setItem('nitori_nt',JSON.stringify(RTD));}catch(e){toast('บันทึกไม่สำเร็จ','err');return;}
+  NTC=null;updFuelPrev();loadHome();rtRender();
+  toast('✅ บันทึกค่าเที่ยวแล้ว — คำนวณใหม่ย้อนหลังทุกงาน','ok');
+}
+function rtReset(){
+  try{localStorage.removeItem('nitori_nt');}catch(e){}
+  NTC=null;rtInit();rtRender();updFuelPrev();loadHome();toast('คืนค่าเที่ยวเป็นค่าเริ่มต้นแล้ว','ok');
 }
 function saveSettings(){
   CFG={
     name:document.getElementById('sname').value,
     boss:document.getElementById('sboss').value,
     truck:document.getElementById('struck').value,
+    floorFee:document.getElementById('sfloor').value.trim(),
+    upFee:document.getElementById('sup').value.trim(),
+    ptMin:document.getElementById('sptmin').value.trim(),
+    ptFee:document.getElementById('sptfee').value.trim(),
     mailUrl:document.getElementById('smurl').value.trim(),
     mailToken:document.getElementById('smtok').value.trim(),
     rent:document.getElementById('srent').value,
     fuel:document.getElementById('sfuel').value,
     tax:document.getElementById('stax').value
   };
-  DB.saveSettings(CFG);
-  toast('✅ บันทึกการตั้งค่าแล้ว','ok');
+  DB.saveSettings(CFG);applyFees(CFG);
+  toast('✅ บันทึกแล้ว — คำนวณใหม่ย้อนหลังทุกงาน','ok');
 }
 
 /* ── Backup / Restore / Storage ── */
@@ -1843,7 +1916,7 @@ function restoreAll(inp){
           PHC[nk]=v;if(idb)await idbTx(st=>st.put(v,nk));else localStorage.setItem(k,o[k]);
         } else localStorage.setItem(k,o[k]);
       }
-      CFG=DB.getSettings();loadCfg();loadHome();toast('✅ กู้คืนข้อมูลสำเร็จ','ok');
+      NTC=null;CFG=DB.getSettings();loadCfg();loadHome();toast('✅ กู้คืนข้อมูลสำเร็จ','ok');
     }catch(err){toast('ไฟล์สำรองไม่ถูกต้อง หรือพื้นที่ไม่พอ','err');}
   };
   r.readAsText(f);
