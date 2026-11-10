@@ -151,7 +151,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
           <label class="tgl"><input type="checkbox" id="fup" onchange="updPreview()"><span class="tgt"></span></label>
         </div>
         <div class="fg"><label>🧾 รวมค่าทางด่วน (บาท)</label><input type="number" id="ftoll" placeholder="0" min="0" step="any" inputmode="decimal" oninput="updPreview()"></div>
-        <div class="fg"><label>🚗 ค่าเช่ารถ (บาท/วัน)</label><input type="number" id="frent" placeholder="0" min="0" step="any" inputmode="decimal" oninput="updPreview()"></div>
+        <div class="fg"><label>🚗 ค่าเช่ารถ (ตั้งค่าที่หน้าตั้งค่า มีผลทุกงานย้อนหลัง)</label><div style="padding:12px 14px;border:1.5px solid var(--bdr);border-radius:10px;background:var(--bg2,#f6f6f8)"><b id="rentShow">0</b> บาท/วัน</div><input type="hidden" id="frent"></div>
         <div class="fg" id="tp-wrap">
           <label>📷 รูปบิลค่าทางด่วน (แนบในอีเมล์อัตโนมัติ)</label>
           <div id="tpgrid" class="pg">
@@ -257,7 +257,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
       <div class="fg"><label>ชื่อพนักงานขับรถ</label><input type="text" id="sname" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fg"><label>📧 อีเมล์หัวหน้า (ผู้รับรายงาน)</label><input type="email" id="sboss" placeholder="boss@example.com"></div>
       <div class="fg"><label>🚚 ชื่อรถ/สาย (แสดงในข้อความรายงาน)</label><input type="text" id="struck" placeholder="Nitori Truck No.2"></div>
-      <div class="fg"><label>🚗 ค่าเช่ารถต่อวัน (บาท) — ใส่เพื่อหักจากรายได้อัตโนมัติ</label><input type="number" id="srent" placeholder="0" min="0" step="any" inputmode="decimal"></div>
+      <div class="fg"><label>🚗 ค่าเช่ารถต่อวัน (บาท ใส่ทศนิยมได้) — หักจากรายได้ทุกวันที่วิ่ง แก้แล้วคำนวณย้อนหลังทุกงาน</label><input type="number" id="srent" placeholder="0" min="0" step="any" inputmode="decimal"></div>
     </div>
   </div>
   <div class="card">
@@ -355,7 +355,7 @@ input:checked+.tgt:before{transform:translateX(20px)}
     </div>
   </div>
   <div style="padding:16px"><button class="btn btn-p" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button></div>
-  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.6 (10 พ.ย. 2569) · NITORI Delivery Report App</div>
+  <div style="padding:0 16px 16px;text-align:center;color:var(--mu);font-size:12px">v3.7 (10 พ.ย. 2569) · NITORI Delivery Report App</div>
 </div>
 
 <!-- NAV -->
@@ -448,6 +448,7 @@ const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 /* ค่าคงที่ ตั้งค่าได้ที่หน้าตั้งค่า (ทศนิยมได้) แล้วคำนวณใหม่ย้อนหลังทุกงาน */
 let UP_FEE=500,PT7_FEE=100,PT7_MIN=7,FLOOR_FEE=100;
 const r2=v=>Math.round((+v||0)*100)/100;
+const getRentFee=()=>{const x=parseFloat(CFG&&CFG.rent);return isNaN(x)||x<0?0:x;};   // ค่าเช่ารถต่อวันทำงาน ใช้ค่าจากตั้งค่าเสมอ → แก้แล้วมีผลย้อนหลังทุกงาน
 function applyFees(c){
   const n=(v,d)=>{const x=parseFloat(v);return isNaN(x)?d:x;};
   c=c||{};
@@ -492,7 +493,7 @@ function calcInc(d){
   const km=getRate(parseFloat(d.distance)||0);
   const fl=floorInc(d.floor_deliveries);
   const tl=parseFloat(d.toll_fee)||0;
-  const rent=parseFloat(d.rent_fee)||0;
+  const rent=getRentFee();
   const up=d.upcountry?UP_FEE:0;
   const pt=Math.max(0,(parseInt(d.point_count)||0)-PT7_MIN+1)*PT7_FEE;
   const tot=r2(km+fl+tl+up+pt);
@@ -599,7 +600,7 @@ function initForm(dEdit){
     document.getElementById('fpts').value=dEdit.point_count||0;
     document.getElementById('fdist').value=dEdit.distance||'';
     document.getElementById('ftoll').value=dEdit.toll_fee||'';
-    document.getElementById('frent').value=dEdit.rent_fee||'';
+
     document.getElementById('fnotes').value=dEdit.notes||'';
     renderFloors(dEdit.floor_deliveries||[]);
     pendTollPics=DB.getTollPhotos(dEdit.id);
@@ -613,7 +614,7 @@ function initForm(dEdit){
     document.getElementById('fup').checked=false;
     renderFloors([]);
     pendTollPics=[];
-    if(CFG.rent)document.getElementById('frent').value=CFG.rent;
+
   }
   togHol();renderPics();renderTollPics();updPreview();
 }
@@ -652,7 +653,8 @@ function getFDs(){
 function updPreview(){
   const dist=parseFloat(document.getElementById('fdist').value)||0;
   const toll=parseFloat(document.getElementById('ftoll').value)||0;
-  const rent=parseFloat(document.getElementById('frent').value)||0;
+  const rent=getRentFee();
+  { const rs=document.getElementById('rentShow'); if(rs)rs.textContent=rent.toLocaleString(); }
   const fds=getFDs();
   const pts=parseInt(document.getElementById('fpts').value)||0;
   const km=getRate(dist);const fl=floorInc(fds);
@@ -712,7 +714,7 @@ document.getElementById('eform').addEventListener('submit',e=>{
     point_count:parseInt(document.getElementById('fpts').value)||0,
     distance:parseFloat(document.getElementById('fdist').value)||0,
     toll_fee:parseFloat(document.getElementById('ftoll').value)||0,
-    rent_fee:parseFloat(document.getElementById('frent').value)||0,
+    rent_fee:getRentFee(),
     notes:document.getElementById('fnotes').value,
     floor_deliveries:getFDs(),
     updated:new Date().toISOString()
